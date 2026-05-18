@@ -1,6 +1,6 @@
 import { ActionResult } from '../actions/actions';
 import type { GlowSettings } from '../render/worldRenderer';
-import { BlockShape, BLOCK_DEFINITIONS, CameraMode, PersonalityWeights, WORLD_RULES } from '../world/types';
+import { AvatarState, BlockShape, BLOCK_DEFINITIONS, CameraMode, PersonalityWeights, WORLD_RULES } from '../world/types';
 import { WorldState } from '../world/worldState';
 
 type UICallbacks = {
@@ -39,6 +39,7 @@ export class UIController {
   private readonly fieldLine: HTMLElement;
   private readonly contextLine: HTMLElement;
   private readonly personalityLine: HTMLElement;
+  private readonly povReactorReflection: HTMLElement;
   private readonly freeSpeedWrap: HTMLElement;
   private readonly contributionInput: HTMLInputElement;
   private readonly transferInput: HTMLInputElement;
@@ -55,6 +56,7 @@ export class UIController {
 
     this.root.innerHTML = `
       <div class="world-vignette"></div>
+      <div class="pov-reactor-reflection" data-pov-reactor-reflection></div>
       <div class="crosshair"></div>
       <section class="avatar-create" data-create-panel>
         <div class="create-shell">
@@ -177,6 +179,7 @@ export class UIController {
     this.fieldLine = this.get('[data-field-line]');
     this.contextLine = this.get('[data-context-line]');
     this.personalityLine = this.get('[data-personality-line]');
+    this.povReactorReflection = this.get('[data-pov-reactor-reflection]');
     this.freeSpeedWrap = this.get('[data-free-speed-wrap]');
     this.contributionInput = this.get<HTMLInputElement>('#teslaContribution');
     this.transferInput = this.get<HTMLInputElement>('#transferCap');
@@ -235,6 +238,7 @@ export class UIController {
       this.personalityLine.textContent = 'Personality: --';
       this.contextLine.textContent = context;
       this.statusLine.textContent = world.lastMessage;
+      this.updatePovReactorReflection(undefined);
       return;
     }
 
@@ -266,6 +270,27 @@ export class UIController {
     this.contextLine.textContent = context || (placement ? placement.message : '');
     this.statusLine.textContent = world.lastMessage;
     this.refreshShapeCosts(energy);
+    this.updatePovReactorReflection(avatar);
+  }
+
+  private updatePovReactorReflection(avatar: AvatarState | undefined): void {
+    if (!avatar || this.cameraMode !== 'avatar_pov' || avatar.shutdown) {
+      this.povReactorReflection.style.setProperty('--pov-reactor-opacity', '0');
+      return;
+    }
+
+    const sceneBloom = this.sceneBloom / 100;
+    const reactor = this.reactorGlow / 100;
+    const reactorBloom = this.reactorBloom / 100;
+    const sliderStrength = Math.pow(sceneBloom * 0.28 + reactor * 0.32 + reactorBloom * 0.4, 1.65);
+    const energyStrength = avatar.energy > 65 ? 1 : avatar.energy > 25 ? 0.24 : 0.55;
+    const opacity = Math.min(0.24, Math.max(0, sliderStrength * energyStrength * 0.22));
+    const size = 0.68 + sliderStrength * 0.34;
+    const color = avatar.energy > 65 ? '245, 255, 247' : avatar.energy > 25 ? '255, 138, 31' : '255, 32, 32';
+
+    this.povReactorReflection.style.setProperty('--pov-reactor-color', color);
+    this.povReactorReflection.style.setProperty('--pov-reactor-opacity', opacity.toFixed(3));
+    this.povReactorReflection.style.setProperty('--pov-reactor-size', size.toFixed(3));
   }
 
   private bindCreatePanel(): void {

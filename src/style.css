@@ -48,6 +48,29 @@ canvas {
     radial-gradient(circle at center, rgba(2, 6, 16, 0) 34%, rgba(2, 6, 16, 0.18) 62%, rgba(2, 6, 16, 0.78) 100%);
 }
 
+.pov-reactor-reflection {
+  --pov-reactor-color: 245, 255, 247;
+  --pov-reactor-opacity: 0;
+  --pov-reactor-size: 1;
+  position: absolute;
+  left: 50%;
+  bottom: -18vh;
+  width: min(760px, 76vw);
+  height: 38vh;
+  pointer-events: none;
+  opacity: var(--pov-reactor-opacity);
+  transform: translateX(-50%) scale(var(--pov-reactor-size));
+  transform-origin: center bottom;
+  background:
+    radial-gradient(ellipse at center bottom, rgba(var(--pov-reactor-color), 0.7) 0%, rgba(var(--pov-reactor-color), 0.26) 23%, rgba(var(--pov-reactor-color), 0.08) 48%, rgba(var(--pov-reactor-color), 0) 74%),
+    linear-gradient(to top, rgba(var(--pov-reactor-color), 0.14), rgba(var(--pov-reactor-color), 0.045) 34%, rgba(var(--pov-reactor-color), 0) 76%);
+  filter: blur(18px) saturate(1.12);
+  mix-blend-mode: screen;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
 .crosshair {
   position: absolute;
   left: 50%;
