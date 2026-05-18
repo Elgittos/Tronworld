@@ -18,7 +18,8 @@ export class UIController {
   selectedShape: BlockShape = 'cube';
   selectedColor = COLORS[0];
   rotation: 0 | 90 | 180 | 270 = 0;
-  orbitInverted = false;
+  orbitHorizontalInverted = false;
+  orbitVerticalInverted = false;
   freeCameraSpeed = 10;
   sceneBloom = 22;
   teslaGlow = 42;
@@ -84,7 +85,10 @@ export class UIController {
             <button data-mode="avatar_pov">POV</button>
             <button data-mode="free_camera">Free</button>
           </div>
-          <button class="orbit-toggle" data-orbit-toggle>Orbit normal</button>
+          <div class="orbit-controls" data-orbit-controls>
+            <button class="orbit-toggle" data-orbit-horizontal-toggle>L/R normal</button>
+            <button class="orbit-toggle" data-orbit-vertical-toggle>U/D normal</button>
+          </div>
           <div class="free-speed" data-free-speed-wrap>
             <label for="freeSpeed">Free speed</label>
             <input id="freeSpeed" type="range" min="3" max="28" step="1" value="10" />
@@ -192,7 +196,7 @@ export class UIController {
     this.cameraMode = mode;
     this.modeButtons.forEach((button, key) => button.classList.toggle('active', key === mode));
     this.freeSpeedWrap.classList.toggle('visible', mode === 'free_camera');
-    this.root.querySelector<HTMLButtonElement>('[data-orbit-toggle]')?.classList.toggle('visible', mode === 'third_person');
+    this.root.querySelector<HTMLElement>('[data-orbit-controls]')?.classList.toggle('visible', mode === 'third_person');
     this.callbacks.onCameraModeChange(mode);
   }
 
@@ -337,11 +341,22 @@ export class UIController {
       this.eyeGlow = value;
     });
 
-    const orbitToggle = this.get<HTMLButtonElement>('[data-orbit-toggle]');
-    orbitToggle.addEventListener('click', () => {
-      this.orbitInverted = !this.orbitInverted;
-      orbitToggle.textContent = this.orbitInverted ? 'Orbit inverted' : 'Orbit normal';
-      orbitToggle.classList.toggle('active', this.orbitInverted);
+    this.bindToggle('[data-orbit-horizontal-toggle]', (active) => {
+      this.orbitHorizontalInverted = active;
+      return active ? 'L/R inverted' : 'L/R normal';
+    });
+    this.bindToggle('[data-orbit-vertical-toggle]', (active) => {
+      this.orbitVerticalInverted = active;
+      return active ? 'U/D inverted' : 'U/D normal';
+    });
+  }
+
+  private bindToggle(selector: string, onToggle: (active: boolean) => string): void {
+    const button = this.get<HTMLButtonElement>(selector);
+    button.addEventListener('click', () => {
+      const active = !button.classList.contains('active');
+      button.classList.toggle('active', active);
+      button.textContent = onToggle(active);
     });
   }
 

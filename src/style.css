@@ -204,7 +204,7 @@ input[type="range"] {
   position: absolute;
   top: 14px;
   left: 14px;
-  width: min(860px, calc(100vw - 28px));
+  width: min(960px, calc(100vw - 28px));
   pointer-events: auto;
 }
 
@@ -275,6 +275,15 @@ input[type="range"] {
   gap: 6px;
 }
 
+.orbit-controls {
+  display: none;
+  gap: 6px;
+}
+
+.orbit-controls.visible {
+  display: flex;
+}
+
 .mode-strip button,
 .orbit-toggle,
 .panel-header button {
@@ -292,13 +301,8 @@ input[type="range"] {
 }
 
 .orbit-toggle {
-  display: none;
-  min-width: 116px;
+  min-width: 104px;
   font-size: 12px;
-}
-
-.orbit-toggle.visible {
-  display: block;
 }
 
 .free-speed,
@@ -336,7 +340,7 @@ input[type="range"] {
   grid-template-columns: repeat(4, minmax(132px, 1fr));
   gap: 8px;
   margin-top: 8px;
-  max-width: 860px;
+  max-width: 960px;
 }
 
 .glow-grid label {
@@ -493,6 +497,15 @@ input[type="range"] {
   .mode-strip {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  .orbit-controls {
+    display: none;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .orbit-controls.visible {
+    display: grid;
   }
 
   .orbit-toggle {
