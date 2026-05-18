@@ -328,7 +328,8 @@ input[type="range"] {
   font-size: 12px;
 }
 
-.free-speed {
+.free-speed,
+.glow-control {
   display: none;
   align-items: center;
   gap: 8px;
@@ -342,6 +343,14 @@ input[type="range"] {
   display: flex;
 }
 
+.glow-control {
+  display: flex;
+}
+
+.glow-control input {
+  width: 96px;
+}
+
 .hud-lines {
   justify-content: flex-start;
   margin-top: 8px;
@@ -351,7 +360,7 @@ input[type="range"] {
 
 .glow-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));
+  grid-template-columns: repeat(5, minmax(118px, 1fr));
   gap: 8px;
   margin-top: 8px;
   max-width: 960px;

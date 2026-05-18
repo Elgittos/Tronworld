@@ -93,6 +93,7 @@ function tick(now: number): void {
   world.update(dt);
   syncPhysicsObjects();
   const glowSettings = ui.getGlowSettings();
+  renderer.setGlowLevel(glowSettings);
   renderer.update(world, cameraMode, controls.freeCamera, controls.thirdPersonCamera, glowSettings, now / 1000);
   ui.update(world, placementResult ?? lastActionResult, contextText);
 

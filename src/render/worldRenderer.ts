@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { Chunk } from '../world/types';
 import {
   AvatarState,
@@ -43,6 +44,7 @@ export type RaycastTarget = {
 };
 
 export type GlowSettings = {
+  sceneBloom: number;
   tesla: TeslaGlowSettings;
   avatar: AvatarGlowSettings;
 };
@@ -63,6 +65,7 @@ export class WorldRenderer {
   readonly camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.05, 900);
 
   private readonly raycaster = new THREE.Raycaster();
+  private readonly bloomPass: UnrealBloomPass;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly chunkGroups = new Map<string, THREE.Group>();
   private readonly blockGroups = new Map<string, THREE.Group>();
@@ -88,6 +91,8 @@ export class WorldRenderer {
     this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.composer.setSize(window.innerWidth, window.innerHeight);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.28, 0.28, 0.74);
+    this.composer.addPass(this.bloomPass);
     this.composer.addPass(new OutputPass());
 
     this.groundPlane = new THREE.Mesh(
@@ -144,6 +149,13 @@ export class WorldRenderer {
     }
 
     this.composer.render();
+  }
+
+  setGlowLevel(settings: GlowSettings): void {
+    const normalized = THREE.MathUtils.clamp(settings.sceneBloom, 0, 100) / 100;
+    this.bloomPass.strength = 0.02 + normalized * 0.58;
+    this.bloomPass.radius = 0.12 + normalized * 0.3;
+    this.bloomPass.threshold = 0.88 - normalized * 0.16;
   }
 
   getPlacementCandidate(
@@ -295,8 +307,7 @@ export class WorldRenderer {
     for (const node of world.teslaNodes.values()) {
       const showField = node.starting || node.interference;
       const glowLevel = node.active ? glowSettings.active : glowSettings.unfinished;
-      const bloomLevel = node.active ? glowSettings.activeBloom : glowSettings.unfinishedBloom;
-      const signature = `${node.active}:${node.interference}:${node.starting}:${Math.floor(node.contribution)}:${showField}:${glowLevel}:${bloomLevel}`;
+      const signature = `${node.active}:${node.interference}:${node.starting}:${Math.floor(node.contribution)}:${showField}:${glowLevel}`;
       const existing = this.teslaGroups.get(node.id);
 
       if (existing?.signature === signature) {
