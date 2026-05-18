@@ -167,7 +167,7 @@ input[type="range"] {
 }
 
 .swatch.active {
-  outline: 2px solid #f5fff7;
+  outline: 2px solid #88ffff;
   outline-offset: 2px;
 }
 

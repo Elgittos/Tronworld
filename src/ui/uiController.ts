@@ -8,7 +8,7 @@ type UICallbacks = {
 };
 
 const SHAPES: BlockShape[] = ['cube', 'half_cube', 'ramp', 'tile', 'pillar', 'tesla_node'];
-const COLORS = ['#00ff88', '#88ffff', '#f5fff7', '#ff8a1f', '#ff2d55', '#9b7cff'];
+const COLORS = ['#00ff88', '#44f2ff', '#2f7dff', '#00d4c8', '#9b7cff', '#d34dff'];
 
 export class UIController {
   readonly root: HTMLElement;
