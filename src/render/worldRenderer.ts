@@ -29,6 +29,7 @@ export type ThirdPersonCameraState = {
   orbitYawOffset: number;
   orbitPitchOffset: number;
   steerFollow: boolean;
+  zoomDistance: number;
 };
 
 export type BuildSelection = {
@@ -58,6 +59,9 @@ type VisualEntry = {
 const GRID_COLOR = 0x00ff88;
 const BACKGROUND_COLOR = 0x020610;
 const CAMERA_HEIGHT = 1.62;
+export const THIRD_PERSON_MIN_ZOOM = 1.45;
+export const THIRD_PERSON_DEFAULT_ZOOM = 5.4;
+export const THIRD_PERSON_MAX_ZOOM = 7.15;
 
 export class WorldRenderer {
   readonly renderer: THREE.WebGLRenderer;
@@ -391,10 +395,20 @@ export class WorldRenderer {
 
     const orbitYaw = avatar.yaw + thirdPersonCamera.orbitYawOffset;
     const orbitForward = new THREE.Vector3(Math.sin(orbitYaw), 0, Math.cos(orbitYaw));
-    const orbitHeight = 2.45 + thirdPersonCamera.orbitPitchOffset * 2.2;
-    const orbitDistance = 5.4 - Math.abs(thirdPersonCamera.orbitPitchOffset) * 0.85;
+    const zoomDistance = THREE.MathUtils.clamp(
+      thirdPersonCamera.zoomDistance,
+      THIRD_PERSON_MIN_ZOOM,
+      THIRD_PERSON_MAX_ZOOM,
+    );
+    const zoomRatio = (zoomDistance - THIRD_PERSON_MIN_ZOOM) / (THIRD_PERSON_MAX_ZOOM - THIRD_PERSON_MIN_ZOOM);
+    const orbitHeight = THREE.MathUtils.lerp(1.78, 2.45, zoomRatio) + thirdPersonCamera.orbitPitchOffset * 2.2;
+    const orbitDistance = THREE.MathUtils.clamp(
+      zoomDistance - Math.abs(thirdPersonCamera.orbitPitchOffset) * 0.45,
+      THIRD_PERSON_MIN_ZOOM,
+      THIRD_PERSON_MAX_ZOOM,
+    );
     const desired = avatarBase.clone().add(new THREE.Vector3(0, orbitHeight, 0)).sub(orbitForward.multiplyScalar(orbitDistance));
-    const target = avatarBase.clone().add(new THREE.Vector3(0, 1.16, 0));
+    const target = avatarBase.clone().add(new THREE.Vector3(0, THREE.MathUtils.lerp(1.55, 1.16, zoomRatio), 0));
 
     if (thirdPersonCamera.steerFollow) {
       this.camera.position.copy(desired);

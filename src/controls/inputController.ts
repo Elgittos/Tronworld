@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { AvatarState, CameraMode, Vec3 } from '../world/types';
-import { FreeCameraState } from '../render/worldRenderer';
+import {
+  FreeCameraState,
+  THIRD_PERSON_DEFAULT_ZOOM,
+  THIRD_PERSON_MAX_ZOOM,
+  THIRD_PERSON_MIN_ZOOM,
+} from '../render/worldRenderer';
 
 type InputCallbacks = {
   getMode: () => CameraMode;
@@ -18,6 +23,7 @@ export type ThirdPersonCameraState = {
   orbitYawOffset: number;
   orbitPitchOffset: number;
   steerFollow: boolean;
+  zoomDistance: number;
 };
 
 const MOVEMENT_CODES = new Set(['keyw', 'keya', 'keys', 'keyd', 'space']);
@@ -65,6 +71,7 @@ export class InputController {
     orbitYawOffset: 0,
     orbitPitchOffset: 0,
     steerFollow: false,
+    zoomDistance: THIRD_PERSON_DEFAULT_ZOOM,
   };
   readonly pointerNdc = new THREE.Vector2(0, 0);
 
@@ -207,6 +214,23 @@ export class InputController {
     });
 
     this.canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+
+    this.canvas.addEventListener(
+      'wheel',
+      (event) => {
+        if (this.callbacks.getMode() !== 'third_person') {
+          return;
+        }
+
+        event.preventDefault();
+        this.thirdPersonCamera.zoomDistance = THREE.MathUtils.clamp(
+          this.thirdPersonCamera.zoomDistance + event.deltaY * 0.006,
+          THIRD_PERSON_MIN_ZOOM,
+          THIRD_PERSON_MAX_ZOOM,
+        );
+      },
+      { passive: false },
+    );
 
     this.canvas.addEventListener('pointerup', (event) => {
       if (this.canvas.hasPointerCapture(event.pointerId)) {

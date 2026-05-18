@@ -175,6 +175,7 @@ export class UIController {
         <div class="bind-row"><span>Jump</span><button disabled>Space</button></div>
         <div class="bind-row"><span>Build</span><button disabled>1</button></div>
         <div class="bind-row"><span>Interact</span><button disabled>E</button></div>
+        <div class="bind-row"><span>Zoom</span><button disabled>Wheel</button></div>
         <div class="bind-row"><span>Steer move</span><button disabled>Right mouse</button></div>
         <div class="bind-row"><span>Orbit view</span><button disabled>Left mouse</button></div>
       </details>
