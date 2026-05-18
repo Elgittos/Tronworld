@@ -23,7 +23,7 @@ export class UIController {
   freeCameraSpeed = 10;
   sceneBloom = 22;
   teslaGlow = 42;
-  teslaBloom = 42;
+  teslaHalo = 42;
   reactorGlow = 44;
   reactorBloom = 54;
   eyeGlow = 36;
@@ -99,7 +99,7 @@ export class UIController {
             <span data-free-speed-value>10</span>
           </div>
           <div class="glow-control">
-            <label for="glowLevel">Bloom</label>
+            <label for="glowLevel">Tesla Bloom</label>
             <input id="glowLevel" type="range" min="0" max="100" step="1" value="22" />
             <span data-glow-value>22</span>
           </div>
@@ -111,9 +111,9 @@ export class UIController {
             <strong data-tesla-glow-value>42</strong>
           </label>
           <label>
-            <span>Tesla Bloom</span>
-            <input id="teslaBloom" type="range" min="0" max="100" step="1" value="42" />
-            <strong data-tesla-bloom-value>42</strong>
+            <span>Tesla Halo</span>
+            <input id="teslaHalo" type="range" min="0" max="100" step="1" value="42" />
+            <strong data-tesla-halo-value>42</strong>
           </label>
           <label>
             <span>Reactor Glow</span>
@@ -225,9 +225,9 @@ export class UIController {
       sceneBloom: this.sceneBloom,
       tesla: {
         active: this.teslaGlow,
-        activeBloom: this.teslaBloom,
+        activeHalo: this.teslaHalo,
         unfinished: this.teslaGlow,
-        unfinishedBloom: this.teslaBloom,
+        unfinishedHalo: this.teslaHalo,
       },
       avatar: {
         reactor: this.reactorGlow,
@@ -373,8 +373,8 @@ export class UIController {
     this.bindSlider('#teslaGlow', '[data-tesla-glow-value]', (value) => {
       this.teslaGlow = value;
     });
-    this.bindSlider('#teslaBloom', '[data-tesla-bloom-value]', (value) => {
-      this.teslaBloom = value;
+    this.bindSlider('#teslaHalo', '[data-tesla-halo-value]', (value) => {
+      this.teslaHalo = value;
     });
     this.bindSlider('#reactorGlow', '[data-reactor-glow-value]', (value) => {
       this.reactorGlow = value;
