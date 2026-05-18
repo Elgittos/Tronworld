@@ -39,6 +39,15 @@ canvas {
   pointer-events: auto;
 }
 
+.world-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to bottom, rgba(2, 6, 16, 0.34), rgba(2, 6, 16, 0) 28%, rgba(2, 6, 16, 0.36) 100%),
+    radial-gradient(circle at center, rgba(2, 6, 16, 0) 34%, rgba(2, 6, 16, 0.18) 62%, rgba(2, 6, 16, 0.78) 100%);
+}
+
 .crosshair {
   position: absolute;
   left: 50%;
@@ -194,13 +203,13 @@ input[type="range"] {
   position: absolute;
   top: 14px;
   left: 14px;
-  width: min(680px, calc(100vw - 28px));
+  width: min(860px, calc(100vw - 28px));
   pointer-events: auto;
 }
 
 .hud-main {
   display: grid;
-  grid-template-columns: minmax(180px, 280px) auto auto;
+  grid-template-columns: minmax(180px, 280px) auto auto auto;
   gap: 10px;
   align-items: center;
 }
@@ -279,7 +288,8 @@ input[type="range"] {
     0 0 20px rgba(0, 255, 136, 0.18);
 }
 
-.free-speed {
+.free-speed,
+.glow-control {
   display: none;
   align-items: center;
   gap: 8px;
@@ -291,6 +301,14 @@ input[type="range"] {
 
 .free-speed.visible {
   display: flex;
+}
+
+.glow-control {
+  display: flex;
+}
+
+.glow-control input {
+  width: 96px;
 }
 
 .hud-lines {
@@ -387,7 +405,7 @@ input[type="range"] {
 .keybind-panel {
   position: absolute;
   right: 14px;
-  top: 14px;
+  top: 74px;
   width: 226px;
   border: 1px solid rgba(136, 255, 255, 0.24);
   background: rgba(2, 6, 16, 0.68);

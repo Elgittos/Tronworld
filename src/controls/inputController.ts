@@ -35,6 +35,7 @@ export class InputController {
     orbitYawOffset: 0,
     orbitPitchOffset: 0,
   };
+  readonly pointerNdc = new THREE.Vector2(0, 0);
 
   private readonly keys = new Set<string>();
   private jumpQueued = false;
@@ -143,6 +144,7 @@ export class InputController {
 
   private bind(): void {
     this.canvas.addEventListener('pointerdown', (event) => {
+      this.updatePointerPosition(event);
       if (event.button !== 0 && event.button !== 2) {
         return;
       }
@@ -190,6 +192,7 @@ export class InputController {
     });
 
     this.canvas.addEventListener('pointermove', (event) => {
+      this.updatePointerPosition(event);
       if (!this.leftMouseHeld && !this.rightMouseHeld) {
         return;
       }
@@ -255,5 +258,12 @@ export class InputController {
     document.addEventListener('keyup', (event) => {
       this.keys.delete(event.code.toLowerCase());
     });
+  }
+
+  private updatePointerPosition(event: PointerEvent): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    this.pointerNdc.set(THREE.MathUtils.clamp(x, 0, 1) * 2 - 1, -(THREE.MathUtils.clamp(y, 0, 1) * 2 - 1));
   }
 }

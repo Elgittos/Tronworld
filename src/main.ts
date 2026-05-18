@@ -87,6 +87,7 @@ function tick(now: number): void {
 
   world.update(dt);
   syncPhysicsObjects();
+  renderer.setGlowLevel(ui.glowLevel);
   renderer.update(world, cameraMode, controls.freeCamera, controls.thirdPersonCamera, now / 1000);
   ui.update(world, placementResult ?? lastActionResult, contextText);
 
@@ -104,7 +105,7 @@ function handlePrimaryAction(): void {
     shape: ui.selectedShape,
     color: ui.selectedColor,
     rotation: ui.rotation,
-  }, avatar.id);
+  }, avatar.id, controls.pointerNdc);
 
   if (!candidate) {
     lastActionResult = { ok: false, message: 'No build surface targeted.' };
@@ -179,7 +180,7 @@ function updateBuildingPreview(): ActionResult | undefined {
     shape: ui.selectedShape,
     color: ui.selectedColor,
     rotation: ui.rotation,
-  }, avatar.id);
+  }, avatar.id, controls.pointerNdc);
 
   if (!candidate) {
     renderer.updateGhost(undefined, false);

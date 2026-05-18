@@ -18,6 +18,7 @@ export class UIController {
   selectedColor = COLORS[0];
   rotation: 0 | 90 | 180 | 270 = 0;
   freeCameraSpeed = 10;
+  glowLevel = 34;
   teslaContribution = 0;
   transferCap = 0;
 
@@ -45,6 +46,7 @@ export class UIController {
     app.appendChild(this.root);
 
     this.root.innerHTML = `
+      <div class="world-vignette"></div>
       <div class="crosshair"></div>
       <section class="avatar-create" data-create-panel>
         <div class="create-shell">
@@ -80,6 +82,11 @@ export class UIController {
             <label for="freeSpeed">Free speed</label>
             <input id="freeSpeed" type="range" min="3" max="28" step="1" value="10" />
             <span data-free-speed-value>10</span>
+          </div>
+          <div class="glow-control">
+            <label for="glowLevel">Glow</label>
+            <input id="glowLevel" type="range" min="0" max="100" step="1" value="34" />
+            <span data-glow-value>34</span>
           </div>
         </div>
         <div class="hud-lines">
@@ -268,6 +275,13 @@ export class UIController {
     freeSpeed.addEventListener('input', () => {
       this.freeCameraSpeed = Number(freeSpeed.value);
       value.textContent = freeSpeed.value;
+    });
+
+    const glowLevel = this.get<HTMLInputElement>('#glowLevel');
+    const glowValue = this.get<HTMLElement>('[data-glow-value]');
+    glowLevel.addEventListener('input', () => {
+      this.glowLevel = Number(glowLevel.value);
+      glowValue.textContent = glowLevel.value;
     });
   }
 

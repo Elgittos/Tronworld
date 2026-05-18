@@ -59,6 +59,7 @@ export class WorldRenderer {
   readonly camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.05, 900);
 
   private readonly raycaster = new THREE.Raycaster();
+  private readonly bloomPass: UnrealBloomPass;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly chunkGroups = new Map<string, THREE.Group>();
   private readonly blockGroups = new Map<string, THREE.Group>();
@@ -70,7 +71,7 @@ export class WorldRenderer {
 
   constructor(container: HTMLElement) {
     this.scene.background = new THREE.Color(BACKGROUND_COLOR);
-    this.scene.fog = new THREE.Fog(BACKGROUND_COLOR, 45, 145);
+    this.scene.fog = new THREE.FogExp2(BACKGROUND_COLOR, 0.026);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -83,7 +84,8 @@ export class WorldRenderer {
     this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.composer.setSize(window.innerWidth, window.innerHeight);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.42, 0.32, 0.72));
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.28, 0.28, 0.74);
+    this.composer.addPass(this.bloomPass);
     this.composer.addPass(new OutputPass());
 
     this.groundPlane = new THREE.Mesh(
@@ -99,7 +101,7 @@ export class WorldRenderer {
     directional.position.set(8, 12, 5);
     this.scene.add(directional);
 
-    const horizon = new THREE.PointLight(0x00ff88, 0.55, 30);
+    const horizon = new THREE.PointLight(0x00ff88, 0.35, 30);
     horizon.position.set(0, 7, 0);
     this.scene.add(horizon);
 
@@ -137,8 +139,20 @@ export class WorldRenderer {
     this.composer.render();
   }
 
-  getPlacementCandidate(world: WorldState, selection: BuildSelection, avatarId?: string): PlacementCandidate | undefined {
-    const target = this.raycastCenter(world, avatarId);
+  setGlowLevel(level: number): void {
+    const normalized = THREE.MathUtils.clamp(level, 0, 100) / 100;
+    this.bloomPass.strength = 0.04 + normalized * 0.7;
+    this.bloomPass.radius = 0.16 + normalized * 0.38;
+    this.bloomPass.threshold = 0.82 - normalized * 0.18;
+  }
+
+  getPlacementCandidate(
+    world: WorldState,
+    selection: BuildSelection,
+    avatarId?: string,
+    pointerNdc = new THREE.Vector2(0, 0),
+  ): PlacementCandidate | undefined {
+    const target = this.raycastAt(world, avatarId, pointerNdc);
 
     if (!target || target.kind === 'avatar') {
       return undefined;
@@ -205,7 +219,7 @@ export class WorldRenderer {
   }
 
   getLookTarget(world: WorldState, avatarId?: string): RaycastTarget | undefined {
-    return this.raycastCenter(world, avatarId);
+    return this.raycastAt(world, avatarId, new THREE.Vector2(0, 0));
   }
 
   updateGhost(candidate: PlacementCandidate | undefined, valid: boolean): void {
@@ -333,7 +347,7 @@ export class WorldRenderer {
       new THREE.MeshBasicMaterial({
         color: 0x030914,
         transparent: true,
-        opacity: 0.82,
+        opacity: 0.58,
         side: THREE.DoubleSide,
       }),
     );
@@ -344,13 +358,13 @@ export class WorldRenderer {
     fineGrid.position.set(centerX, 0.002, centerZ);
     const fineMat = fineGrid.material as THREE.Material;
     fineMat.transparent = true;
-    fineMat.opacity = 0.055;
+    fineMat.opacity = 0.04;
 
     const majorGrid = new THREE.GridHelper(size, 4, 0x88ffff, GRID_COLOR);
     majorGrid.position.set(centerX, 0.004, centerZ);
     const majorMat = majorGrid.material as THREE.Material;
     majorMat.transparent = true;
-    majorMat.opacity = 0.14;
+    majorMat.opacity = 0.1;
 
     group.add(base, fineGrid, majorGrid);
     return group;
@@ -398,8 +412,8 @@ export class WorldRenderer {
     this.camera.lookAt(this.cameraTarget);
   }
 
-  private raycastCenter(world: WorldState, avatarId?: string): RaycastTarget | undefined {
-    this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+  private raycastAt(world: WorldState, avatarId: string | undefined, pointerNdc: THREE.Vector2): RaycastTarget | undefined {
+    this.raycaster.setFromCamera(pointerNdc, this.camera);
     this.raycaster.far = 12;
     const objects = this.getRaycastObjects();
     const hits = this.raycaster.intersectObjects(objects, true);

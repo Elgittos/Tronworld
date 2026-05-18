@@ -50,13 +50,9 @@ function getEnergyVisualState(avatar: AvatarState): EnergyVisualState {
     edge: tint,
     edgeOpacity: 0.35,
     eyes: tint,
-    eyeIntensity: avatar.energy > 25 ? 1.5 : 1.15,
+    eyeIntensity: avatar.energy > 25 ? 1.05 : 0.82,
     active: true,
   };
-}
-
-function highestPersonalityKey(avatar: AvatarState): string {
-  return Object.entries(avatar.personality).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'focus';
 }
 
 export class AvatarVisual {
@@ -73,11 +69,10 @@ export class AvatarVisual {
     leftLeg: THREE.Group;
     rightLeg: THREE.Group;
   };
-  private readonly eyeVariants: THREE.Group[] = [];
   private readonly lastPosition = new THREE.Vector3();
   private firstUpdate = true;
 
-  constructor(private readonly avatar: AvatarState) {
+  constructor(avatar: AvatarState) {
     const tint = new THREE.Color(avatar.color);
 
     this.bodyMat = new THREE.MeshStandardMaterial({
@@ -121,7 +116,6 @@ export class AvatarVisual {
     this.group.scale.setScalar(AVATAR_SCALE);
     this.buildBody();
     this.limbs = this.buildLimbs();
-    this.selectEyeStyle();
     applyRaycastMeta(this.group, 'avatar', avatar.id);
   }
 
@@ -216,68 +210,14 @@ export class AvatarVisual {
   }
 
   private createEyes(eyeY: number): void {
-    const makeEyeGroup = (name: string): THREE.Group => {
-      const group = new THREE.Group();
-      group.name = name;
-      group.visible = false;
-      this.group.add(group);
-      this.eyeVariants.push(group);
-      return group;
-    };
-
-    const twinDots = makeEyeGroup('twin dots');
+    const twinDots = new THREE.Group();
+    twinDots.name = 'normal eyes';
     const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), this.eyeMat);
     leftEye.position.set(-0.06, eyeY, 0.15);
     const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), this.eyeMat);
     rightEye.position.set(0.06, eyeY, 0.15);
     twinDots.add(leftEye, rightEye);
-
-    const visor = makeEyeGroup('thin visor');
-    const visorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.018, 0.018), this.eyeMat);
-    visorMesh.position.set(0, eyeY, 0.155);
-    visor.add(visorMesh);
-
-    const mono = makeEyeGroup('mono scanner');
-    const monoDot = new THREE.Mesh(new THREE.SphereGeometry(0.038, 12, 12), this.eyeMat);
-    monoDot.position.set(0, eyeY, 0.158);
-    const monoLine = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.012, 0.012), this.eyeMat);
-    monoLine.position.set(0, eyeY, 0.148);
-    mono.add(monoDot, monoLine);
-
-    const pixels = makeEyeGroup('four pixels');
-    [
-      [-0.055, 0.012],
-      [-0.025, -0.012],
-      [0.025, -0.012],
-      [0.055, 0.012],
-    ].forEach(([x, y]) => {
-      const pixel = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 8), this.eyeMat);
-      pixel.position.set(x, eyeY + y, 0.158);
-      pixels.add(pixel);
-    });
-
-    const slits = makeEyeGroup('angled slits');
-    const leftSlit = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.014, 0.014), this.eyeMat);
-    leftSlit.position.set(-0.052, eyeY, 0.158);
-    leftSlit.rotation.z = -0.28;
-    const rightSlit = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.014, 0.014), this.eyeMat);
-    rightSlit.position.set(0.052, eyeY, 0.158);
-    rightSlit.rotation.z = 0.28;
-    slits.add(leftSlit, rightSlit);
-  }
-
-  private selectEyeStyle(): void {
-    const key = highestPersonalityKey(this.avatar);
-    const indexByKey: Record<string, number> = {
-      focus: 0,
-      connection: 1,
-      curiosity: 2,
-      purpose: 3,
-    };
-    const selected = indexByKey[key] ?? 0;
-    this.eyeVariants.forEach((group, index) => {
-      group.visible = index === selected;
-    });
+    this.group.add(twinDots);
   }
 
   private buildLimbs(): AvatarVisual['limbs'] {
