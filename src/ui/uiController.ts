@@ -23,7 +23,6 @@ export class UIController {
   freeCameraSpeed = 10;
   sceneBloom = 22;
   teslaGlow = 42;
-  unfinishedTeslaGlow = 38;
   reactorGlow = 44;
   reactorBloom = 54;
   eyeGlow = 36;
@@ -108,26 +107,6 @@ export class UIController {
             <span>Tesla</span>
             <input id="teslaGlow" type="range" min="0" max="100" step="1" value="42" />
             <strong data-tesla-glow-value>42</strong>
-          </label>
-          <label>
-            <span>Unfinished</span>
-            <input id="unfinishedTeslaGlow" type="range" min="0" max="100" step="1" value="38" />
-            <strong data-unfinished-tesla-glow-value>38</strong>
-          </label>
-          <label>
-            <span>Reactor</span>
-            <input id="reactorGlow" type="range" min="0" max="100" step="1" value="44" />
-            <strong data-reactor-glow-value>44</strong>
-          </label>
-          <label>
-            <span>R Bloom</span>
-            <input id="reactorBloom" type="range" min="0" max="100" step="1" value="54" />
-            <strong data-reactor-bloom-value>54</strong>
-          </label>
-          <label>
-            <span>Eyes</span>
-            <input id="eyeGlow" type="range" min="0" max="100" step="1" value="36" />
-            <strong data-eye-glow-value>36</strong>
           </label>
         </div>
         <div class="hud-lines">
@@ -219,7 +198,7 @@ export class UIController {
       sceneBloom: this.sceneBloom,
       tesla: {
         active: this.teslaGlow,
-        unfinished: this.unfinishedTeslaGlow,
+        unfinished: this.teslaGlow,
       },
       avatar: {
         reactor: this.reactorGlow,
@@ -363,18 +342,6 @@ export class UIController {
     });
     this.bindSlider('#teslaGlow', '[data-tesla-glow-value]', (value) => {
       this.teslaGlow = value;
-    });
-    this.bindSlider('#unfinishedTeslaGlow', '[data-unfinished-tesla-glow-value]', (value) => {
-      this.unfinishedTeslaGlow = value;
-    });
-    this.bindSlider('#reactorGlow', '[data-reactor-glow-value]', (value) => {
-      this.reactorGlow = value;
-    });
-    this.bindSlider('#reactorBloom', '[data-reactor-bloom-value]', (value) => {
-      this.reactorBloom = value;
-    });
-    this.bindSlider('#eyeGlow', '[data-eye-glow-value]', (value) => {
-      this.eyeGlow = value;
     });
 
     this.bindToggle('[data-orbit-horizontal-toggle]', (active) => {
