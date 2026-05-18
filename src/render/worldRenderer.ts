@@ -72,6 +72,7 @@ export class WorldRenderer {
   private readonly teslaGroups = new Map<string, VisualEntry>();
   private readonly avatarGroups = new Map<string, AvatarVisual>();
   private readonly ghostRoot = new THREE.Group();
+  private readonly avatarFillLight = new THREE.PointLight(0x00ff88, 0.5, 7);
   private readonly groundPlane: THREE.Mesh;
   private ghostShape?: BlockShape;
 
@@ -111,6 +112,9 @@ export class WorldRenderer {
     horizon.position.set(0, 7, 0);
     this.scene.add(horizon);
 
+    this.avatarFillLight.position.set(0, 2, 2);
+    this.scene.add(this.avatarFillLight);
+
     this.ghostRoot.visible = false;
     this.scene.add(this.ghostRoot);
 
@@ -135,6 +139,7 @@ export class WorldRenderer {
     this.sync(world, mode, glowSettings);
     const selected = world.getSelectedAvatar();
     this.updateCamera(mode, selected, freeCamera, thirdPersonCamera);
+    this.updateAvatarFillLight(mode, selected);
 
     for (const [id, visual] of this.avatarGroups) {
       const avatar = world.avatars.get(id);
@@ -416,6 +421,27 @@ export class WorldRenderer {
     this.camera.position.lerp(desired, 0.16);
     this.cameraTarget.lerp(avatarBase.clone().add(new THREE.Vector3(0, 1.16, 0)), 0.2);
     this.camera.lookAt(this.cameraTarget);
+  }
+
+  private updateAvatarFillLight(mode: CameraMode, avatar: AvatarState | undefined): void {
+    if (!avatar || mode === 'avatar_pov') {
+      this.avatarFillLight.intensity = 0;
+      return;
+    }
+
+    const tint = new THREE.Color(avatar.color);
+    const avatarCenter = new THREE.Vector3(avatar.position.x, avatar.position.y + 1.1, avatar.position.z);
+    const cameraToAvatar = avatarCenter.clone().sub(this.camera.position).normalize();
+    const cameraRight = new THREE.Vector3().crossVectors(cameraToAvatar, this.camera.up).normalize();
+    const lightPosition = avatarCenter
+      .clone()
+      .sub(cameraToAvatar.multiplyScalar(1.45))
+      .add(cameraRight.multiplyScalar(0.95))
+      .add(new THREE.Vector3(0, 0.35, 0));
+
+    this.avatarFillLight.color.copy(tint);
+    this.avatarFillLight.intensity = avatar.shutdown ? 0.12 : mode === 'free_camera' ? 0.42 : 0.82;
+    this.avatarFillLight.position.lerp(lightPosition, 0.35);
   }
 
   private raycastAt(world: WorldState, avatarId: string | undefined, pointerNdc: THREE.Vector2): RaycastTarget | undefined {

@@ -42,7 +42,7 @@ function getEnergyVisualState(avatar: AvatarState): EnergyVisualState {
       bodyGlow: SHUTDOWN_GREY,
       bodyGlowIntensity: 0.02,
       edge: SHUTDOWN_GREY,
-      edgeOpacity: 0.58,
+      edgeOpacity: 0.5,
       eyes: SHUTDOWN_GREY,
       eyeIntensity: 0.02,
       active: false,
@@ -55,9 +55,9 @@ function getEnergyVisualState(avatar: AvatarState): EnergyVisualState {
     reactor,
     body: DARK_BODY,
     bodyGlow: tint,
-    bodyGlowIntensity: 0.07,
+    bodyGlowIntensity: 0.06,
     edge: tint,
-    edgeOpacity: 0.64,
+    edgeOpacity: 0.3,
     eyes: tint,
     eyeIntensity: avatar.energy > 25 ? 1.05 : 0.82,
     active: true,
@@ -87,9 +87,9 @@ export class AvatarVisual {
     this.bodyMat = new THREE.MeshStandardMaterial({
       color: DARK_BODY,
       emissive: tint,
-      emissiveIntensity: 0.12,
-      roughness: 0.3,
-      metalness: 0.7,
+      emissiveIntensity: 0.06,
+      roughness: 0.12,
+      metalness: 0.9,
     });
     this.eyeMat = new THREE.MeshStandardMaterial({
       color: tint,
@@ -119,7 +119,8 @@ export class AvatarVisual {
     this.edgeMat = new THREE.LineBasicMaterial({
       color: tint,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.3,
+      depthWrite: false,
     });
 
     this.group.scale.setScalar(AVATAR_SCALE);
