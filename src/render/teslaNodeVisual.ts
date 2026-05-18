@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TeslaNodeState } from '../world/types';
-import { applyRaycastMeta } from './geometry';
+import { applyRaycastMeta, createSoftGlowTexture } from './geometry';
 
 const ACTIVE_COLOR = 0xf5ffff;
 const FIELD_COLOR = 0x88ffff;
@@ -89,10 +89,27 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean, 
     depthWrite: false,
     side: THREE.DoubleSide,
   });
+  const distanceHaloMat = new THREE.SpriteMaterial({
+    map: createSoftGlowTexture(),
+    color,
+    transparent: true,
+    opacity: complete ? (node.starting ? 0.012 + glow * 0.12 : 0.01 + glow * 0.085) : 0.008 + glow * 0.045,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: true,
+    fog: false,
+  });
 
   const core = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 32), activeCoreMat);
   core.position.y = height / 2;
   group.add(core);
+
+  const distanceHalo = new THREE.Sprite(distanceHaloMat);
+  distanceHalo.name = 'teslaDistanceHalo';
+  distanceHalo.position.y = height * 0.54;
+  const haloScale = complete ? (node.starting ? 4.4 + glow * 5.2 : 3.2 + glow * 3.8) : 1.8 + glow * 2.1;
+  distanceHalo.scale.set(haloScale, haloScale, 1);
+  group.add(distanceHalo);
 
   const coreGlow = new THREE.Mesh(
     new THREE.CylinderGeometry(radius * 1.45, radius * 1.45, height * 1.04, 32, 1, true),
@@ -134,7 +151,12 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean, 
       group.add(ringGlow);
     }
 
-    const nodeLight = new THREE.PointLight(color, (node.starting ? 0.34 : 0.24) + glow * (node.starting ? 1.35 : 0.9), node.starting ? 8 : 6);
+    const nodeLight = new THREE.PointLight(
+      color,
+      (node.starting ? 0.34 : 0.24) + glow * (node.starting ? 1.85 : 1.25),
+      node.starting ? 42 : 28,
+      1.45,
+    );
     nodeLight.position.y = height * 0.55;
     group.add(nodeLight);
   } else {
@@ -143,7 +165,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean, 
     progress.position.y = height + 0.55;
     group.add(progress);
 
-    const redLight = new THREE.PointLight(DANGER_COLOR, 0.18 + glow * 1.05, 4);
+    const redLight = new THREE.PointLight(DANGER_COLOR, 0.18 + glow * 1.05, 10, 1.55);
     redLight.position.y = height * 0.5;
     group.add(redLight);
   }

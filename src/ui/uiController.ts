@@ -25,6 +25,7 @@ export class UIController {
   teslaGlow = 42;
   unfinishedTeslaGlow = 38;
   reactorGlow = 44;
+  reactorBloom = 54;
   eyeGlow = 36;
   teslaContribution = 0;
   transferCap = 0;
@@ -115,6 +116,11 @@ export class UIController {
             <span>Reactor</span>
             <input id="reactorGlow" type="range" min="0" max="100" step="1" value="44" />
             <strong data-reactor-glow-value>44</strong>
+          </label>
+          <label>
+            <span>R Bloom</span>
+            <input id="reactorBloom" type="range" min="0" max="100" step="1" value="54" />
+            <strong data-reactor-bloom-value>54</strong>
           </label>
           <label>
             <span>Eyes</span>
@@ -213,6 +219,7 @@ export class UIController {
       },
       avatar: {
         reactor: this.reactorGlow,
+        reactorBloom: this.reactorBloom,
         eyes: this.eyeGlow,
       },
     };
@@ -336,6 +343,9 @@ export class UIController {
     });
     this.bindSlider('#reactorGlow', '[data-reactor-glow-value]', (value) => {
       this.reactorGlow = value;
+    });
+    this.bindSlider('#reactorBloom', '[data-reactor-bloom-value]', (value) => {
+      this.reactorBloom = value;
     });
     this.bindSlider('#eyeGlow', '[data-eye-glow-value]', (value) => {
       this.eyeGlow = value;

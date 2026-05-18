@@ -25,6 +25,7 @@ type EnergyVisualState = {
 
 export type AvatarGlowSettings = {
   reactor: number;
+  reactorBloom: number;
   eyes: number;
 };
 
@@ -55,9 +56,9 @@ function getEnergyVisualState(avatar: AvatarState): EnergyVisualState {
     reactor,
     body: DARK_BODY,
     bodyGlow: tint,
-      bodyGlowIntensity: 0.04,
-      edge: tint,
-      edgeOpacity: 0.42,
+    bodyGlowIntensity: 0.04,
+    edge: tint,
+    edgeOpacity: 0.42,
     eyes: tint,
     eyeIntensity: avatar.energy > 25 ? 1.05 : 0.82,
     active: true,
@@ -71,6 +72,7 @@ export class AvatarVisual {
   private readonly eyeMat: THREE.MeshStandardMaterial;
   private readonly ringMat: THREE.MeshStandardMaterial;
   private readonly glowSpriteMat: THREE.SpriteMaterial;
+  private readonly bloomSpriteMat: THREE.SpriteMaterial;
   private readonly edgeMat: THREE.LineBasicMaterial;
   private readonly limbs: {
     leftArm: THREE.Group;
@@ -119,6 +121,14 @@ export class AvatarVisual {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
+    this.bloomSpriteMat = new THREE.SpriteMaterial({
+      map: createSoftGlowTexture(),
+      color: WHITE_REACTOR,
+      transparent: true,
+      opacity: 0.18,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
     this.edgeMat = new THREE.LineBasicMaterial({
       color: tint,
       transparent: true,
@@ -135,6 +145,7 @@ export class AvatarVisual {
   update(avatar: AvatarState, time: number, hiddenForPov: boolean, glowSettings: AvatarGlowSettings): void {
     const visualState = getEnergyVisualState(avatar);
     const reactorGlow = sliderFactor(glowSettings.reactor);
+    const reactorBloom = sliderFactor(glowSettings.reactorBloom);
     const eyeGlow = sliderFactor(glowSettings.eyes);
     const baseY = avatar.position.y - FOOT_OFFSET * AVATAR_SCALE;
     this.group.position.set(avatar.position.x, baseY, avatar.position.z);
@@ -153,6 +164,7 @@ export class AvatarVisual {
     this.ringMat.emissive.setHex(visualState.reactor);
     this.ringMat.emissiveIntensity = visualState.active ? 1.2 + reactorGlow * 4.2 : 0.55 + reactorGlow * 2.4;
     this.glowSpriteMat.color.setHex(visualState.reactor);
+    this.bloomSpriteMat.color.setHex(visualState.reactor);
 
     const currentPosition = new THREE.Vector3(avatar.position.x, avatar.position.y, avatar.position.z);
     const movedDistance = this.firstUpdate ? 0 : currentPosition.distanceTo(this.lastPosition);
@@ -177,14 +189,23 @@ export class AvatarVisual {
     const beatA = Math.pow(Math.max(0, Math.sin(time * 3.6)), 6);
     const beatB = Math.pow(Math.max(0, Math.sin(time * 3.6 - 0.85)), 10) * 0.55;
     const heartbeat = Math.min(1, beatA + beatB);
-    const glowScale = visualState.active ? 0.18 + reactorGlow * 0.22 + heartbeat * 0.035 : 0.2 + reactorGlow * 0.18;
+    const glowScale = visualState.active ? 0.16 + reactorBloom * 0.26 + heartbeat * 0.035 : 0.18 + reactorBloom * 0.2;
     this.glowSpriteMat.opacity = visualState.active
-      ? 0.12 + reactorGlow * 0.52 + heartbeat * reactorGlow * 0.22
-      : 0.18 + reactorGlow * 0.52;
+      ? 0.08 + reactorBloom * 0.54 + heartbeat * reactorBloom * 0.22
+      : 0.12 + reactorBloom * 0.54;
 
     const glow = this.group.getObjectByName('reactorGlow');
     if (glow) {
       glow.scale.set(glowScale, glowScale, 1);
+    }
+
+    const bloom = this.group.getObjectByName('reactorBloom');
+    if (bloom) {
+      const bloomScale = visualState.active ? 0.34 + reactorBloom * 0.66 + heartbeat * reactorBloom * 0.08 : 0.36 + reactorBloom * 0.42;
+      bloom.scale.set(bloomScale, bloomScale, 1);
+      this.bloomSpriteMat.opacity = visualState.active
+        ? 0.015 + reactorBloom * 0.24 + heartbeat * reactorBloom * 0.08
+        : 0.035 + reactorBloom * 0.26;
     }
   }
 
@@ -216,6 +237,12 @@ export class AvatarVisual {
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.046, 0.088, 32), this.ringMat);
     ring.position.set(0, chestY, 0.124);
     this.group.add(ring);
+
+    const bloomSprite = new THREE.Sprite(this.bloomSpriteMat);
+    bloomSprite.name = 'reactorBloom';
+    bloomSprite.position.set(0, chestY, 0.116);
+    bloomSprite.scale.set(0.62, 0.62, 1);
+    this.group.add(bloomSprite);
 
     const glowSprite = new THREE.Sprite(this.glowSpriteMat);
     glowSprite.name = 'reactorGlow';
