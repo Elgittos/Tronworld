@@ -44,6 +44,7 @@ controls = new InputController(renderer.renderer.domElement, {
   getMode: () => cameraMode,
   getAvatar: () => world.getSelectedAvatar(),
   getFreeSpeed: () => ui.freeCameraSpeed,
+  getAvatarSpeed: () => ui.avatarWalkSpeed,
   getOrbitHorizontalInverted: () => ui.orbitHorizontalInverted,
   getOrbitVerticalInverted: () => ui.orbitVerticalInverted,
   onToggleBuild: () => ui.toggleBuildPanel(),
@@ -111,7 +112,7 @@ function handlePrimaryAction(): void {
     shape: ui.selectedShape,
     color: ui.selectedColor,
     rotation: ui.rotation,
-  }, avatar.id, controls.pointerNdc);
+  }, avatar.id);
 
   if (!candidate) {
     lastActionResult = { ok: false, message: 'No build surface targeted.' };
@@ -186,7 +187,7 @@ function updateBuildingPreview(): ActionResult | undefined {
     shape: ui.selectedShape,
     color: ui.selectedColor,
     rotation: ui.rotation,
-  }, avatar.id, controls.pointerNdc);
+  }, avatar.id);
 
   if (!candidate) {
     renderer.updateGhost(undefined, false);

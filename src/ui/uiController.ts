@@ -20,6 +20,7 @@ export class UIController {
   rotation: 0 | 90 | 180 | 270 = 0;
   orbitHorizontalInverted = false;
   orbitVerticalInverted = false;
+  avatarWalkSpeed: number = WORLD_RULES.avatarWalkSpeed;
   freeCameraSpeed = 10;
   sceneBloom = 22;
   teslaGlow = 42;
@@ -92,6 +93,11 @@ export class UIController {
           <div class="orbit-controls" data-orbit-controls>
             <button class="orbit-toggle" data-orbit-horizontal-toggle>L/R normal</button>
             <button class="orbit-toggle" data-orbit-vertical-toggle>U/D normal</button>
+          </div>
+          <div class="avatar-speed">
+            <label for="avatarSpeed">Move speed</label>
+            <input id="avatarSpeed" type="range" min="1.8" max="7.5" step="0.1" value="${WORLD_RULES.avatarWalkSpeed}" />
+            <span data-avatar-speed-value>${WORLD_RULES.avatarWalkSpeed.toFixed(1)}</span>
           </div>
           <div class="free-speed" data-free-speed-wrap>
             <label for="freeSpeed">Free speed</label>
@@ -167,7 +173,7 @@ export class UIController {
         <div class="bind-row"><span>Turn left</span><button disabled>A</button></div>
         <div class="bind-row"><span>Turn right</span><button disabled>D</button></div>
         <div class="bind-row"><span>Jump</span><button disabled>Space</button></div>
-        <div class="bind-row"><span>Build</span><button disabled>Q</button></div>
+        <div class="bind-row"><span>Build</span><button disabled>1</button></div>
         <div class="bind-row"><span>Interact</span><button disabled>E</button></div>
         <div class="bind-row"><span>Steer move</span><button disabled>Right mouse</button></div>
         <div class="bind-row"><span>Orbit view</span><button disabled>Left mouse</button></div>
@@ -367,6 +373,10 @@ export class UIController {
       value.textContent = freeSpeed.value;
     });
 
+    this.bindSlider('#avatarSpeed', '[data-avatar-speed-value]', (value) => {
+      this.avatarWalkSpeed = value;
+    }, 1);
+
     this.bindSlider('#glowLevel', '[data-glow-value]', (value) => {
       this.sceneBloom = value;
     });
@@ -408,7 +418,7 @@ export class UIController {
     });
   }
 
-  private bindSlider(inputSelector: string, valueSelector: string, onChange: (value: number) => void): void {
+  private bindSlider(inputSelector: string, valueSelector: string, onChange: (value: number) => void, decimals = 0): void {
     const input = this.get<HTMLInputElement>(inputSelector);
     const output = this.get<HTMLElement>(valueSelector);
     input.addEventListener('keydown', (event) => {
@@ -418,7 +428,7 @@ export class UIController {
     input.addEventListener('input', () => {
       const value = Number(input.value);
       onChange(value);
-      output.textContent = input.value;
+      output.textContent = value.toFixed(decimals);
     });
   }
 

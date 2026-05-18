@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { AvatarState, CameraMode, Vec3, WORLD_RULES } from '../world/types';
+import { AvatarState, CameraMode, Vec3 } from '../world/types';
 import { FreeCameraState } from '../render/worldRenderer';
 
 type InputCallbacks = {
   getMode: () => CameraMode;
   getAvatar: () => AvatarState | undefined;
   getFreeSpeed: () => number;
+  getAvatarSpeed: () => number;
   getOrbitHorizontalInverted: () => boolean;
   getOrbitVerticalInverted: () => boolean;
   onToggleBuild: () => void;
@@ -114,7 +115,7 @@ export class InputController {
 
     const moving = direction.lengthSq() > 0;
     if (moving) {
-      direction.normalize().multiplyScalar(WORLD_RULES.avatarWalkSpeed);
+      direction.normalize().multiplyScalar(this.callbacks.getAvatarSpeed());
     }
 
     this.thirdPersonCamera.steerFollow = this.rightMouseHeld;
@@ -327,7 +328,7 @@ export class InputController {
         }
       }
 
-      if (code === 'keyq') {
+      if (code === 'digit1') {
         event.preventDefault();
         this.callbacks.onToggleBuild();
       }

@@ -19,8 +19,12 @@ function geometryForShape(shape: BlockShape): THREE.BufferGeometry {
   switch (shape) {
     case 'cube':
     case 'half_cube':
-    case 'tile':
       return new THREE.BoxGeometry(definition.size.x, definition.size.y, definition.size.z);
+    case 'tile': {
+      const geometry = new THREE.PlaneGeometry(definition.size.x, definition.size.z);
+      geometry.rotateX(-Math.PI / 2);
+      return geometry;
+    }
     case 'pillar':
       return new THREE.CylinderGeometry(definition.size.x / 2, definition.size.x / 2, definition.size.y, 24);
     case 'ramp':

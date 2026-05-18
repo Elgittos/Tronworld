@@ -175,11 +175,7 @@ export class WorldRenderer {
     let position: Vec3;
 
     if (target.kind === 'floor') {
-      position = {
-        x: Math.round(target.point.x),
-        y: selection.shape === 'tesla_node' ? shapeSize.y / 2 : shapeSize.y / 2,
-        z: Math.round(target.point.z),
-      };
+      position = this.snapFloorPlacement(target.point, shapeSize);
     } else if (target.kind === 'block' && target.id) {
       const block = world.blocks.get(target.id);
       if (!block) {
@@ -188,29 +184,7 @@ export class WorldRenderer {
 
       const targetSize = BLOCK_DEFINITIONS[block.shape].size;
       const normal = this.axisNormal(target.normal);
-
-      if (Math.abs(normal.y) > 0.5) {
-        position = {
-          x: Math.round(target.point.x),
-          y:
-            normal.y > 0
-              ? block.position.y + targetSize.y / 2 + shapeSize.y / 2
-              : block.position.y - targetSize.y / 2 - shapeSize.y / 2,
-          z: Math.round(target.point.z),
-        };
-      } else if (Math.abs(normal.x) > 0.5) {
-        position = {
-          x: block.position.x + normal.x * (targetSize.x / 2 + shapeSize.x / 2),
-          y: block.position.y,
-          z: Math.round(target.point.z),
-        };
-      } else {
-        position = {
-          x: Math.round(target.point.x),
-          y: block.position.y,
-          z: block.position.z + normal.z * (targetSize.z / 2 + shapeSize.z / 2),
-        };
-      }
+      position = this.snapBlockFacePlacement(block.position, targetSize, shapeSize, normal);
     } else {
       const normal = this.axisNormal(target.normal);
       position = {
@@ -556,5 +530,21 @@ export class WorldRenderer {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.composer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  private snapFloorPlacement(point: Vec3, shapeSize: Vec3): Vec3 {
+    return {
+      x: Math.round(point.x),
+      y: shapeSize.y / 2,
+      z: Math.round(point.z),
+    };
+  }
+
+  private snapBlockFacePlacement(targetPosition: Vec3, targetSize: Vec3, shapeSize: Vec3, normal: Vec3): Vec3 {
+    return {
+      x: targetPosition.x + normal.x * (targetSize.x / 2 + shapeSize.x / 2),
+      y: targetPosition.y + normal.y * (targetSize.y / 2 + shapeSize.y / 2),
+      z: targetPosition.z + normal.z * (targetSize.z / 2 + shapeSize.z / 2),
+    };
   }
 }

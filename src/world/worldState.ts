@@ -273,6 +273,10 @@ export class WorldState {
       return { valid: false, reason: `${definition.label} needs a flat surface.` };
     }
 
+    if (candidate.shape === 'tile' && candidate.targetKind !== 'floor') {
+      return { valid: false, reason: 'Tile places only on the grid floor.' };
+    }
+
     if (!definition.canAttachToSide && Math.abs(candidate.surfaceNormal.y) < 0.8) {
       return { valid: false, reason: `${definition.label} cannot attach sideways.` };
     }

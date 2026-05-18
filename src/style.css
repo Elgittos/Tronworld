@@ -232,8 +232,8 @@ input[type="range"] {
 }
 
 .hud-main {
-  display: grid;
-  grid-template-columns: minmax(180px, 280px) auto auto auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
 }
@@ -328,6 +328,7 @@ input[type="range"] {
   font-size: 12px;
 }
 
+.avatar-speed,
 .free-speed,
 .glow-control {
   display: none;
@@ -339,6 +340,10 @@ input[type="range"] {
   font-size: 12px;
 }
 
+.avatar-speed {
+  display: flex;
+}
+
 .free-speed.visible {
   display: flex;
 }
@@ -347,6 +352,7 @@ input[type="range"] {
   display: flex;
 }
 
+.avatar-speed input,
 .glow-control input {
   width: 96px;
 }

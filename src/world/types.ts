@@ -124,7 +124,7 @@ export const BLOCK_DEFINITIONS: Record<BlockShape, BlockDefinition> = {
     shape: 'tile',
     label: 'Tile',
     energyCost: 3,
-    size: { x: 1, y: 0.12, z: 1 },
+    size: { x: 1, y: 0.02, z: 1 },
     canAttachToSide: false,
     requiresHorizontalSurface: true,
   },

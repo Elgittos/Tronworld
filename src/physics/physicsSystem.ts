@@ -19,6 +19,26 @@ export type PhysicsMoveResult = {
   grounded: boolean;
 };
 
+const RAMP_VERTICES = new Float32Array([
+  -0.5, -0.5, -0.5,
+  0.5, -0.5, -0.5,
+  -0.5, -0.5, 0.5,
+  0.5, -0.5, 0.5,
+  -0.5, 0.5, -0.5,
+  0.5, 0.5, -0.5,
+]);
+
+const RAMP_INDICES = new Uint32Array([
+  0, 2, 1,
+  1, 2, 3,
+  0, 1, 4,
+  1, 5, 4,
+  2, 4, 3,
+  3, 4, 5,
+  0, 4, 2,
+  1, 3, 5,
+]);
+
 export class PhysicsSystem {
   private readonly world: RapierWorld;
   private readonly controller: RapierCharacterController;
@@ -76,12 +96,17 @@ export class PhysicsSystem {
     const definition = BLOCK_DEFINITIONS[block.shape];
     let colliderDesc: InstanceType<typeof RAPIER.ColliderDesc>;
 
-    if (block.shape === 'pillar') {
+    if (block.shape === 'ramp') {
+      colliderDesc = RAPIER.ColliderDesc.trimesh(RAMP_VERTICES, RAMP_INDICES);
+      const angle = (block.rotation * Math.PI) / 180;
+      colliderDesc.setRotation({ x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) });
+    } else if (block.shape === 'pillar') {
       colliderDesc = RAPIER.ColliderDesc.cylinder(definition.size.y / 2, 0.35);
     } else {
       colliderDesc = RAPIER.ColliderDesc.cuboid(definition.size.x / 2, definition.size.y / 2, definition.size.z / 2);
     }
 
+    colliderDesc.setFriction(1);
     colliderDesc.setTranslation(block.position.x, block.position.y, block.position.z);
     this.blockColliders.set(block.id, this.world.createCollider(colliderDesc));
   }
