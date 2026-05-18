@@ -28,6 +28,7 @@ export type FreeCameraState = {
 export type ThirdPersonCameraState = {
   orbitYawOffset: number;
   orbitPitchOffset: number;
+  steerFollow: boolean;
 };
 
 export type BuildSelection = {
@@ -419,8 +420,8 @@ export class WorldRenderer {
     const orbitHeight = 2.45 + thirdPersonCamera.orbitPitchOffset * 2.2;
     const orbitDistance = 5.4 - Math.abs(thirdPersonCamera.orbitPitchOffset) * 0.85;
     const desired = avatarBase.clone().add(new THREE.Vector3(0, orbitHeight, 0)).sub(orbitForward.multiplyScalar(orbitDistance));
-    this.camera.position.lerp(desired, 0.16);
-    this.cameraTarget.lerp(avatarBase.clone().add(new THREE.Vector3(0, 1.16, 0)), 0.2);
+    this.camera.position.lerp(desired, thirdPersonCamera.steerFollow ? 0.42 : 0.16);
+    this.cameraTarget.lerp(avatarBase.clone().add(new THREE.Vector3(0, 1.16, 0)), thirdPersonCamera.steerFollow ? 0.5 : 0.2);
     this.camera.lookAt(this.cameraTarget);
   }
 

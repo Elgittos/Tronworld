@@ -16,6 +16,7 @@ type InputCallbacks = {
 export type ThirdPersonCameraState = {
   orbitYawOffset: number;
   orbitPitchOffset: number;
+  steerFollow: boolean;
 };
 
 const MOVEMENT_CODES = new Set(['keyw', 'keya', 'keys', 'keyd', 'space']);
@@ -62,6 +63,7 @@ export class InputController {
   readonly thirdPersonCamera: ThirdPersonCameraState = {
     orbitYawOffset: 0,
     orbitPitchOffset: 0,
+    steerFollow: false,
   };
   readonly pointerNdc = new THREE.Vector2(0, 0);
 
@@ -88,6 +90,7 @@ export class InputController {
   getAvatarMove(avatar: AvatarState | undefined, dt: number): { velocity: Vec3; jump: boolean; moving: boolean } {
     if (!avatar || avatar.shutdown || this.callbacks.getMode() === 'free_camera') {
       this.jumpQueued = false;
+      this.thirdPersonCamera.steerFollow = false;
       return { velocity: { x: 0, y: 0, z: 0 }, jump: false, moving: false };
     }
 
@@ -114,6 +117,8 @@ export class InputController {
       direction.normalize().multiplyScalar(WORLD_RULES.avatarWalkSpeed);
     }
 
+    this.thirdPersonCamera.steerFollow = this.rightMouseHeld && moving;
+
     const jump = this.jumpQueued;
     this.jumpQueued = false;
 
@@ -126,8 +131,9 @@ export class InputController {
 
   updateHeldCamera(dt: number, recenterBehindAvatar: boolean): void {
     if (recenterBehindAvatar && !this.leftMouseHeld) {
-      this.thirdPersonCamera.orbitYawOffset = THREE.MathUtils.damp(this.thirdPersonCamera.orbitYawOffset, 0, 7, dt);
-      this.thirdPersonCamera.orbitPitchOffset = THREE.MathUtils.damp(this.thirdPersonCamera.orbitPitchOffset, 0, 7, dt);
+      const followSpeed = this.thirdPersonCamera.steerFollow ? 18 : 7;
+      this.thirdPersonCamera.orbitYawOffset = THREE.MathUtils.damp(this.thirdPersonCamera.orbitYawOffset, 0, followSpeed, dt);
+      this.thirdPersonCamera.orbitPitchOffset = THREE.MathUtils.damp(this.thirdPersonCamera.orbitPitchOffset, 0, followSpeed, dt);
     }
   }
 
@@ -218,6 +224,7 @@ export class InputController {
     this.canvas.addEventListener('pointercancel', () => {
       this.leftMouseHeld = false;
       this.rightMouseHeld = false;
+      this.thirdPersonCamera.steerFollow = false;
     });
 
     this.canvas.addEventListener('pointermove', (event) => {
