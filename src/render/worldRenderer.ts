@@ -307,7 +307,8 @@ export class WorldRenderer {
     for (const node of world.teslaNodes.values()) {
       const showField = node.starting || node.interference;
       const glowLevel = node.active ? glowSettings.active : glowSettings.unfinished;
-      const signature = `${node.active}:${node.interference}:${node.starting}:${Math.floor(node.contribution)}:${showField}:${glowLevel}`;
+      const bloomLevel = node.active ? glowSettings.activeBloom : glowSettings.unfinishedBloom;
+      const signature = `${node.active}:${node.interference}:${node.starting}:${Math.floor(node.contribution)}:${showField}:${glowLevel}:${bloomLevel}`;
       const existing = this.teslaGroups.get(node.id);
 
       if (existing?.signature === signature) {

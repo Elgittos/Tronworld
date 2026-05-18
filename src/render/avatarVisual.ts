@@ -27,6 +27,7 @@ export type AvatarGlowSettings = {
   reactor: number;
   reactorBloom: number;
   eyes: number;
+  eyesBloom: number;
 };
 
 function sliderFactor(value: number): number {
@@ -147,6 +148,7 @@ export class AvatarVisual {
     const reactorGlow = sliderFactor(glowSettings.reactor);
     const reactorBloom = sliderFactor(glowSettings.reactorBloom);
     const eyeGlow = sliderFactor(glowSettings.eyes);
+    const eyeBloom = sliderFactor(glowSettings.eyesBloom);
     const baseY = avatar.position.y - FOOT_OFFSET * AVATAR_SCALE;
     this.group.position.set(avatar.position.x, baseY, avatar.position.z);
     this.group.rotation.y = avatar.yaw;
@@ -157,7 +159,7 @@ export class AvatarVisual {
     this.bodyMat.emissiveIntensity = visualState.bodyGlowIntensity;
     this.eyeMat.color.setHex(visualState.eyes);
     this.eyeMat.emissive.setHex(visualState.eyes);
-    this.eyeMat.emissiveIntensity = visualState.eyeIntensity * (0.75 + eyeGlow * 5.4);
+    this.eyeMat.emissiveIntensity = visualState.eyeIntensity * (0.75 + eyeGlow * 2 + eyeBloom * 3.4);
     this.edgeMat.color.setHex(visualState.edge);
     this.edgeMat.opacity = visualState.edgeOpacity;
     this.ringMat.color.setHex(visualState.reactor);
