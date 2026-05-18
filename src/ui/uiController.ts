@@ -1,4 +1,5 @@
 import { ActionResult } from '../actions/actions';
+import type { GlowSettings } from '../render/worldRenderer';
 import { BlockShape, BLOCK_DEFINITIONS, CameraMode, PersonalityWeights, WORLD_RULES } from '../world/types';
 import { WorldState } from '../world/worldState';
 
@@ -19,6 +20,10 @@ export class UIController {
   rotation: 0 | 90 | 180 | 270 = 0;
   freeCameraSpeed = 10;
   glowLevel = 22;
+  teslaGlow = 42;
+  unfinishedTeslaGlow = 38;
+  reactorGlow = 44;
+  eyeGlow = 36;
   teslaContribution = 0;
   transferCap = 0;
 
@@ -84,10 +89,32 @@ export class UIController {
             <span data-free-speed-value>10</span>
           </div>
           <div class="glow-control">
-            <label for="glowLevel">Glow</label>
+            <label for="glowLevel">World</label>
             <input id="glowLevel" type="range" min="0" max="100" step="1" value="22" />
             <span data-glow-value>22</span>
           </div>
+        </div>
+        <div class="glow-grid">
+          <label>
+            <span>Tesla</span>
+            <input id="teslaGlow" type="range" min="0" max="100" step="1" value="42" />
+            <strong data-tesla-glow-value>42</strong>
+          </label>
+          <label>
+            <span>Unfinished</span>
+            <input id="unfinishedTeslaGlow" type="range" min="0" max="100" step="1" value="38" />
+            <strong data-unfinished-tesla-glow-value>38</strong>
+          </label>
+          <label>
+            <span>Reactor</span>
+            <input id="reactorGlow" type="range" min="0" max="100" step="1" value="44" />
+            <strong data-reactor-glow-value>44</strong>
+          </label>
+          <label>
+            <span>Eyes</span>
+            <input id="eyeGlow" type="range" min="0" max="100" step="1" value="36" />
+            <strong data-eye-glow-value>36</strong>
+          </label>
         </div>
         <div class="hud-lines">
           <span data-field-line>Field: --</span>
@@ -168,6 +195,20 @@ export class UIController {
 
   setStatus(message: string): void {
     this.statusLine.textContent = message;
+  }
+
+  getGlowSettings(): GlowSettings {
+    return {
+      world: this.glowLevel,
+      tesla: {
+        active: this.teslaGlow,
+        unfinished: this.unfinishedTeslaGlow,
+      },
+      avatar: {
+        reactor: this.reactorGlow,
+        eyes: this.eyeGlow,
+      },
+    };
   }
 
   update(world: WorldState, placement?: ActionResult, context = ''): void {
@@ -277,11 +318,30 @@ export class UIController {
       value.textContent = freeSpeed.value;
     });
 
-    const glowLevel = this.get<HTMLInputElement>('#glowLevel');
-    const glowValue = this.get<HTMLElement>('[data-glow-value]');
-    glowLevel.addEventListener('input', () => {
-      this.glowLevel = Number(glowLevel.value);
-      glowValue.textContent = glowLevel.value;
+    this.bindSlider('#glowLevel', '[data-glow-value]', (value) => {
+      this.glowLevel = value;
+    });
+    this.bindSlider('#teslaGlow', '[data-tesla-glow-value]', (value) => {
+      this.teslaGlow = value;
+    });
+    this.bindSlider('#unfinishedTeslaGlow', '[data-unfinished-tesla-glow-value]', (value) => {
+      this.unfinishedTeslaGlow = value;
+    });
+    this.bindSlider('#reactorGlow', '[data-reactor-glow-value]', (value) => {
+      this.reactorGlow = value;
+    });
+    this.bindSlider('#eyeGlow', '[data-eye-glow-value]', (value) => {
+      this.eyeGlow = value;
+    });
+  }
+
+  private bindSlider(inputSelector: string, valueSelector: string, onChange: (value: number) => void): void {
+    const input = this.get<HTMLInputElement>(inputSelector);
+    const output = this.get<HTMLElement>(valueSelector);
+    input.addEventListener('input', () => {
+      const value = Number(input.value);
+      onChange(value);
+      output.textContent = input.value;
     });
   }
 

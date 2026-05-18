@@ -14,10 +14,10 @@ import {
   Vec3,
 } from '../world/types';
 import { WorldState } from '../world/worldState';
-import { AvatarVisual } from './avatarVisual';
+import { AvatarGlowSettings, AvatarVisual } from './avatarVisual';
 import { createBlockVisual, createGhostVisual, updateGhostVisual } from './blockVisual';
 import { disposeObject, applyRaycastMeta } from './geometry';
-import { createTeslaNodeVisual } from './teslaNodeVisual';
+import { createTeslaNodeVisual, TeslaGlowSettings } from './teslaNodeVisual';
 
 export type FreeCameraState = {
   position: THREE.Vector3;
@@ -41,6 +41,12 @@ export type RaycastTarget = {
   id?: string;
   point: Vec3;
   normal: Vec3;
+};
+
+export type GlowSettings = {
+  world: number;
+  tesla: TeslaGlowSettings;
+  avatar: AvatarGlowSettings;
 };
 
 type VisualEntry = {
@@ -111,10 +117,10 @@ export class WorldRenderer {
     window.addEventListener('resize', () => this.resize());
   }
 
-  sync(world: WorldState, mode: CameraMode): void {
+  sync(world: WorldState, mode: CameraMode, glowSettings: GlowSettings): void {
     this.syncChunks(world.chunkManager.getVisibleChunks());
     this.syncBlocks(world);
-    this.syncTeslaNodes(world);
+    this.syncTeslaNodes(world, glowSettings.tesla);
     this.syncAvatars(world, mode);
   }
 
@@ -123,24 +129,25 @@ export class WorldRenderer {
     mode: CameraMode,
     freeCamera: FreeCameraState,
     thirdPersonCamera: ThirdPersonCameraState,
+    glowSettings: GlowSettings,
     time: number,
   ): void {
-    this.sync(world, mode);
+    this.sync(world, mode, glowSettings);
     const selected = world.getSelectedAvatar();
     this.updateCamera(mode, selected, freeCamera, thirdPersonCamera);
 
     for (const [id, visual] of this.avatarGroups) {
       const avatar = world.avatars.get(id);
       if (avatar) {
-        visual.update(avatar, time, mode === 'avatar_pov' && selected?.id === id);
+        visual.update(avatar, time, mode === 'avatar_pov' && selected?.id === id, glowSettings.avatar);
       }
     }
 
     this.composer.render();
   }
 
-  setGlowLevel(level: number): void {
-    const normalized = THREE.MathUtils.clamp(level, 0, 100) / 100;
+  setGlowLevel(settings: GlowSettings): void {
+    const normalized = THREE.MathUtils.clamp(settings.world, 0, 100) / 100;
     this.bloomPass.strength = 0.02 + normalized * 0.58;
     this.bloomPass.radius = 0.12 + normalized * 0.3;
     this.bloomPass.threshold = 0.88 - normalized * 0.16;
@@ -283,7 +290,7 @@ export class WorldRenderer {
     }
   }
 
-  private syncTeslaNodes(world: WorldState): void {
+  private syncTeslaNodes(world: WorldState, glowSettings: TeslaGlowSettings): void {
     for (const [id, entry] of this.teslaGroups) {
       if (!world.teslaNodes.has(id)) {
         this.scene.remove(entry.group);
@@ -294,7 +301,8 @@ export class WorldRenderer {
 
     for (const node of world.teslaNodes.values()) {
       const showField = node.starting || node.interference;
-      const signature = `${node.active}:${node.interference}:${node.starting}:${Math.floor(node.contribution)}:${showField}`;
+      const glowLevel = node.active ? glowSettings.active : glowSettings.unfinished;
+      const signature = `${node.active}:${node.interference}:${node.starting}:${Math.floor(node.contribution)}:${showField}:${glowLevel}`;
       const existing = this.teslaGroups.get(node.id);
 
       if (existing?.signature === signature) {
@@ -306,7 +314,7 @@ export class WorldRenderer {
         disposeObject(existing.group);
       }
 
-      const group = createTeslaNodeVisual(node, showField);
+      const group = createTeslaNodeVisual(node, showField, glowSettings);
       this.scene.add(group);
       this.teslaGroups.set(node.id, { group, signature });
     }

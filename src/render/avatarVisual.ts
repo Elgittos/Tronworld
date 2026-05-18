@@ -23,6 +23,15 @@ type EnergyVisualState = {
   active: boolean;
 };
 
+export type AvatarGlowSettings = {
+  reactor: number;
+  eyes: number;
+};
+
+function sliderFactor(value: number): number {
+  return THREE.MathUtils.clamp(value, 0, 100) / 100;
+}
+
 function getEnergyVisualState(avatar: AvatarState): EnergyVisualState {
   const tint = new THREE.Color(avatar.color).getHex();
 
@@ -119,8 +128,10 @@ export class AvatarVisual {
     applyRaycastMeta(this.group, 'avatar', avatar.id);
   }
 
-  update(avatar: AvatarState, time: number, hiddenForPov: boolean): void {
+  update(avatar: AvatarState, time: number, hiddenForPov: boolean, glowSettings: AvatarGlowSettings): void {
     const visualState = getEnergyVisualState(avatar);
+    const reactorGlow = sliderFactor(glowSettings.reactor);
+    const eyeGlow = sliderFactor(glowSettings.eyes);
     const baseY = avatar.position.y - FOOT_OFFSET * AVATAR_SCALE;
     this.group.position.set(avatar.position.x, baseY, avatar.position.z);
     this.group.rotation.y = avatar.yaw;
@@ -131,11 +142,12 @@ export class AvatarVisual {
     this.bodyMat.emissiveIntensity = visualState.bodyGlowIntensity;
     this.eyeMat.color.setHex(visualState.eyes);
     this.eyeMat.emissive.setHex(visualState.eyes);
-    this.eyeMat.emissiveIntensity = visualState.eyeIntensity;
+    this.eyeMat.emissiveIntensity = visualState.eyeIntensity * (0.18 + eyeGlow * 1.65);
     this.edgeMat.color.setHex(visualState.edge);
     this.edgeMat.opacity = visualState.edgeOpacity;
     this.ringMat.color.setHex(visualState.reactor);
     this.ringMat.emissive.setHex(visualState.reactor);
+    this.ringMat.emissiveIntensity = visualState.active ? 1.2 + reactorGlow * 4.2 : 0.55 + reactorGlow * 2.4;
     this.glowSpriteMat.color.setHex(visualState.reactor);
 
     const currentPosition = new THREE.Vector3(avatar.position.x, avatar.position.y, avatar.position.z);
@@ -161,8 +173,10 @@ export class AvatarVisual {
     const beatA = Math.pow(Math.max(0, Math.sin(time * 3.6)), 6);
     const beatB = Math.pow(Math.max(0, Math.sin(time * 3.6 - 0.85)), 10) * 0.55;
     const heartbeat = Math.min(1, beatA + beatB);
-    const glowScale = visualState.active ? 0.3 + heartbeat * 0.035 : 0.32;
-    this.glowSpriteMat.opacity = visualState.active ? 0.52 + heartbeat * 0.26 : 0.78;
+    const glowScale = visualState.active ? 0.18 + reactorGlow * 0.22 + heartbeat * 0.035 : 0.2 + reactorGlow * 0.18;
+    this.glowSpriteMat.opacity = visualState.active
+      ? 0.12 + reactorGlow * 0.52 + heartbeat * reactorGlow * 0.22
+      : 0.18 + reactorGlow * 0.52;
 
     const glow = this.group.getObjectByName('reactorGlow');
     if (glow) {

@@ -6,6 +6,15 @@ const ACTIVE_COLOR = 0xf5ffff;
 const FIELD_COLOR = 0x88ffff;
 const DANGER_COLOR = 0xff2020;
 
+export type TeslaGlowSettings = {
+  active: number;
+  unfinished: number;
+};
+
+function sliderFactor(value: number): number {
+  return THREE.MathUtils.clamp(value, 0, 100) / 100;
+}
+
 function createTextSprite(text: string, color: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
   canvas.width = 384;
@@ -37,9 +46,10 @@ function createTextSprite(text: string, color: string): THREE.Sprite {
   return sprite;
 }
 
-export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean): THREE.Group {
+export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean, glowSettings: TeslaGlowSettings): THREE.Group {
   const group = new THREE.Group();
   const complete = node.active;
+  const glow = complete ? sliderFactor(glowSettings.active) : sliderFactor(glowSettings.unfinished);
   const color = node.interference ? DANGER_COLOR : complete ? ACTIVE_COLOR : DANGER_COLOR;
   const height = node.height;
   const radius = node.starting ? 0.32 : 0.28;
@@ -48,7 +58,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean):
   const activeCoreMat = new THREE.MeshStandardMaterial({
     color,
     emissive: color,
-    emissiveIntensity: complete ? 2.6 : 0.9,
+    emissiveIntensity: complete ? 1.1 + glow * 3.2 : 0.35 + glow * 1.6,
     roughness: 0.08,
     metalness: 1,
     transparent: true,
@@ -57,7 +67,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean):
   const ringMat = new THREE.MeshStandardMaterial({
     color,
     emissive: color,
-    emissiveIntensity: complete ? 4.2 : 0.9,
+    emissiveIntensity: complete ? 1.8 + glow * 4.4 : 0.35 + glow * 1.6,
     roughness: 0.03,
     metalness: 1,
     transparent: true,
@@ -66,7 +76,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean):
   const glowMat = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: complete ? (node.starting ? 0.1 : 0.08) : 0.34,
+    opacity: complete ? (node.starting ? 0.025 + glow * 0.16 : 0.02 + glow * 0.13) : 0.08 + glow * 0.34,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
@@ -74,7 +84,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean):
   const ringGlowMat = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: node.starting ? 0.42 : 0.34,
+    opacity: node.starting ? 0.1 + glow * 0.48 : 0.08 + glow * 0.38,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
@@ -124,7 +134,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean):
       group.add(ringGlow);
     }
 
-    const nodeLight = new THREE.PointLight(color, node.starting ? 1.25 : 0.8, node.starting ? 8 : 6);
+    const nodeLight = new THREE.PointLight(color, (node.starting ? 0.34 : 0.24) + glow * (node.starting ? 1.35 : 0.9), node.starting ? 8 : 6);
     nodeLight.position.y = height * 0.55;
     group.add(nodeLight);
   } else {
@@ -133,14 +143,14 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean):
     progress.position.y = height + 0.55;
     group.add(progress);
 
-    const redLight = new THREE.PointLight(DANGER_COLOR, 0.75, 4);
+    const redLight = new THREE.PointLight(DANGER_COLOR, 0.18 + glow * 1.05, 4);
     redLight.position.y = height * 0.5;
     group.add(redLight);
   }
 
   if (complete && showField) {
     const fieldColor = node.interference ? DANGER_COLOR : FIELD_COLOR;
-    const fieldOpacity = node.interference ? 0.12 : node.starting ? 0.09 : 0.07;
+    const fieldOpacity = node.interference ? 0.05 + glow * 0.12 : node.starting ? 0.025 + glow * 0.1 : 0.02 + glow * 0.08;
     const fieldMat = new THREE.MeshBasicMaterial({
       color: fieldColor,
       transparent: true,
@@ -157,7 +167,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean):
     const ringMatField = new THREE.MeshBasicMaterial({
       color: fieldColor,
       transparent: true,
-      opacity: node.interference ? 0.42 : 0.34,
+      opacity: node.interference ? 0.12 + glow * 0.42 : 0.09 + glow * 0.34,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -170,7 +180,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean):
     const shimmerMat = new THREE.MeshBasicMaterial({
       color: fieldColor,
       transparent: true,
-      opacity: node.interference ? 0.085 : 0.055,
+      opacity: node.interference ? 0.025 + glow * 0.085 : 0.018 + glow * 0.055,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
