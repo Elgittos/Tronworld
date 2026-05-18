@@ -8,6 +8,7 @@ type InputCallbacks = {
   getFreeSpeed: () => number;
   getOrbitHorizontalInverted: () => boolean;
   getOrbitVerticalInverted: () => boolean;
+  getPointerWorldPoint: () => Vec3 | undefined;
   onToggleBuild: () => void;
   onPrimary: () => void;
   onSecondary: () => void;
@@ -94,12 +95,24 @@ export class InputController {
       return { velocity: { x: 0, y: 0, z: 0 }, jump: false, moving: false };
     }
 
+    const rightMouseSteering = this.rightMouseHeld;
     const turnSpeed = 2.55;
-    if (this.keys.has('keya')) {
+    if (!rightMouseSteering && this.keys.has('keya')) {
       avatar.yaw += turnSpeed * dt;
     }
-    if (this.keys.has('keyd')) {
+    if (!rightMouseSteering && this.keys.has('keyd')) {
       avatar.yaw -= turnSpeed * dt;
+    }
+
+    if (rightMouseSteering) {
+      const target = this.callbacks.getPointerWorldPoint();
+      if (target) {
+        const dx = target.x - avatar.position.x;
+        const dz = target.z - avatar.position.z;
+        if (dx * dx + dz * dz > 0.04) {
+          avatar.yaw = Math.atan2(dx, dz);
+        }
+      }
     }
 
     const forward = new THREE.Vector3(Math.sin(avatar.yaw), 0, Math.cos(avatar.yaw));
@@ -267,8 +280,7 @@ export class InputController {
       }
 
       if (this.rightMouseHeld && !avatar.shutdown) {
-        avatar.yaw -= event.movementX * sensitivity;
-        avatar.pitch = THREE.MathUtils.clamp(avatar.pitch - event.movementY * sensitivity, -1.1, 1.1);
+        return;
       } else if (this.leftMouseHeld && mode === 'third_person') {
         const horizontalDirection = this.callbacks.getOrbitHorizontalInverted() ? 1 : -1;
         const verticalDirection = this.callbacks.getOrbitVerticalInverted() ? 1 : -1;
