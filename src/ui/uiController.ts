@@ -22,10 +22,8 @@ export class UIController {
   orbitVerticalInverted = false;
   freeCameraSpeed = 10;
   sceneBloom = 22;
-  teslaFinishedGlow = 42;
-  teslaFinishedBloom = 42;
-  teslaUnfinishedGlow = 42;
-  teslaUnfinishedBloom = 42;
+  teslaGlow = 42;
+  teslaBloom = 42;
   reactorGlow = 44;
   reactorBloom = 54;
   eyeGlow = 36;
@@ -108,24 +106,14 @@ export class UIController {
         </div>
         <div class="glow-grid">
           <label>
-            <span>Finished Glow</span>
-            <input id="teslaFinishedGlow" type="range" min="0" max="100" step="1" value="42" />
-            <strong data-tesla-finished-glow-value>42</strong>
+            <span>Tesla Glow</span>
+            <input id="teslaGlow" type="range" min="0" max="100" step="1" value="42" />
+            <strong data-tesla-glow-value>42</strong>
           </label>
           <label>
-            <span>Finished Bloom</span>
-            <input id="teslaFinishedBloom" type="range" min="0" max="100" step="1" value="42" />
-            <strong data-tesla-finished-bloom-value>42</strong>
-          </label>
-          <label>
-            <span>Unfinished Glow</span>
-            <input id="teslaUnfinishedGlow" type="range" min="0" max="100" step="1" value="42" />
-            <strong data-tesla-unfinished-glow-value>42</strong>
-          </label>
-          <label>
-            <span>Unfinished Bloom</span>
-            <input id="teslaUnfinishedBloom" type="range" min="0" max="100" step="1" value="42" />
-            <strong data-tesla-unfinished-bloom-value>42</strong>
+            <span>Tesla Bloom</span>
+            <input id="teslaBloom" type="range" min="0" max="100" step="1" value="42" />
+            <strong data-tesla-bloom-value>42</strong>
           </label>
           <label>
             <span>Reactor Glow</span>
@@ -236,10 +224,10 @@ export class UIController {
     return {
       sceneBloom: this.sceneBloom,
       tesla: {
-        active: this.teslaFinishedGlow,
-        activeBloom: this.teslaFinishedBloom,
-        unfinished: this.teslaUnfinishedGlow,
-        unfinishedBloom: this.teslaUnfinishedBloom,
+        active: this.teslaGlow,
+        activeBloom: this.teslaBloom,
+        unfinished: this.teslaGlow,
+        unfinishedBloom: this.teslaBloom,
       },
       avatar: {
         reactor: this.reactorGlow,
@@ -382,17 +370,11 @@ export class UIController {
     this.bindSlider('#glowLevel', '[data-glow-value]', (value) => {
       this.sceneBloom = value;
     });
-    this.bindSlider('#teslaFinishedGlow', '[data-tesla-finished-glow-value]', (value) => {
-      this.teslaFinishedGlow = value;
+    this.bindSlider('#teslaGlow', '[data-tesla-glow-value]', (value) => {
+      this.teslaGlow = value;
     });
-    this.bindSlider('#teslaFinishedBloom', '[data-tesla-finished-bloom-value]', (value) => {
-      this.teslaFinishedBloom = value;
-    });
-    this.bindSlider('#teslaUnfinishedGlow', '[data-tesla-unfinished-glow-value]', (value) => {
-      this.teslaUnfinishedGlow = value;
-    });
-    this.bindSlider('#teslaUnfinishedBloom', '[data-tesla-unfinished-bloom-value]', (value) => {
-      this.teslaUnfinishedBloom = value;
+    this.bindSlider('#teslaBloom', '[data-tesla-bloom-value]', (value) => {
+      this.teslaBloom = value;
     });
     this.bindSlider('#reactorGlow', '[data-reactor-glow-value]', (value) => {
       this.reactorGlow = value;
