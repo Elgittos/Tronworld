@@ -18,13 +18,39 @@ export type ThirdPersonCameraState = {
   orbitPitchOffset: number;
 };
 
+const MOVEMENT_CODES = new Set(['keyw', 'keya', 'keys', 'keyd', 'space']);
+
 function isEditableTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   if (!element) {
     return false;
   }
 
-  return ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(element.tagName) || element.isContentEditable;
+  if (element instanceof HTMLInputElement && element.type === 'range') {
+    return false;
+  }
+
+  if (element.tagName === 'BUTTON') {
+    return false;
+  }
+
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName) || element.isContentEditable;
+}
+
+function releaseUiControlFocus(target: EventTarget | null, code: string): boolean {
+  if (!MOVEMENT_CODES.has(code)) {
+    return false;
+  }
+
+  const element = target as HTMLElement | null;
+  const focusTarget = element?.closest('button, input[type="range"]') as HTMLElement | null;
+
+  if (!focusTarget) {
+    return false;
+  }
+
+  focusTarget.blur();
+  return true;
 }
 
 export class InputController {
@@ -240,11 +266,15 @@ export class InputController {
     });
 
     document.addEventListener('keydown', (event) => {
+      const code = event.code.toLowerCase();
+      if (releaseUiControlFocus(event.target, code)) {
+        event.preventDefault();
+      }
+
       if (isEditableTarget(event.target)) {
         return;
       }
 
-      const code = event.code.toLowerCase();
       this.keys.add(code);
 
       if (code === 'space') {

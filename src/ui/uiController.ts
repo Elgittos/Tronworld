@@ -187,6 +187,7 @@ export class UIController {
     this.bindCreatePanel();
     this.bindHud();
     this.bindBuildPanel();
+    this.releaseControlsAfterPointerUse();
     this.refreshBuildPanel();
     this.setCameraMode(this.cameraMode);
   }
@@ -398,10 +399,24 @@ export class UIController {
   private bindSlider(inputSelector: string, valueSelector: string, onChange: (value: number) => void): void {
     const input = this.get<HTMLInputElement>(inputSelector);
     const output = this.get<HTMLElement>(valueSelector);
+    input.addEventListener('keydown', (event) => {
+      event.preventDefault();
+      input.blur();
+    });
     input.addEventListener('input', () => {
       const value = Number(input.value);
       onChange(value);
       output.textContent = input.value;
+    });
+  }
+
+  private releaseControlsAfterPointerUse(): void {
+    this.root.addEventListener('pointerup', (event) => {
+      const target = (event.target as HTMLElement | null)?.closest('button, input[type="range"]') as HTMLElement | null;
+
+      if (target) {
+        window.setTimeout(() => target.blur(), 0);
+      }
     });
   }
 

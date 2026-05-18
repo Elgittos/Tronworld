@@ -451,6 +451,10 @@ export class WorldRenderer {
     const hits = this.raycaster.intersectObjects(objects, true);
 
     for (const hit of hits) {
+      if (this.isVisualOnlyRaycastHit(hit.object)) {
+        continue;
+      }
+
       const meta = this.getRaycastMeta(hit.object);
       if (!meta) {
         continue;
@@ -486,6 +490,10 @@ export class WorldRenderer {
     }
 
     return undefined;
+  }
+
+  private isVisualOnlyRaycastHit(object: THREE.Object3D): boolean {
+    return object.userData.ignoreRaycast === true || object instanceof THREE.Line || object instanceof THREE.Sprite;
   }
 
   private getRaycastObjects(): THREE.Object3D[] {

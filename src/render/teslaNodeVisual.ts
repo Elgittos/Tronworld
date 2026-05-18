@@ -15,6 +15,11 @@ function sliderFactor(value: number): number {
   return THREE.MathUtils.clamp(value, 0, 100) / 100;
 }
 
+function ignoreRaycast<T extends THREE.Object3D>(object: T): T {
+  object.userData.ignoreRaycast = true;
+  return object;
+}
+
 function createTextSprite(text: string, color: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
   canvas.width = 384;
@@ -104,35 +109,35 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean, 
   core.position.y = height / 2;
   group.add(core);
 
-  const distanceHalo = new THREE.Sprite(distanceHaloMat);
+  const distanceHalo = ignoreRaycast(new THREE.Sprite(distanceHaloMat));
   distanceHalo.name = 'teslaDistanceHalo';
   distanceHalo.position.y = height * 0.54;
   const haloScale = complete ? (node.starting ? 4.4 + glow * 5.2 : 3.2 + glow * 3.8) : 1.8 + glow * 2.1;
   distanceHalo.scale.set(haloScale, haloScale, 1);
   group.add(distanceHalo);
 
-  const coreGlow = new THREE.Mesh(
+  const coreGlow = ignoreRaycast(new THREE.Mesh(
     new THREE.CylinderGeometry(radius * 1.45, radius * 1.45, height * 1.04, 32, 1, true),
     glowMat,
-  );
+  ));
   coreGlow.position.y = height / 2;
   group.add(coreGlow);
 
   for (let i = 0; i < 2; i += 1) {
-    const planeGlow = new THREE.Mesh(new THREE.PlaneGeometry(radius * (complete ? 4.1 : 3.4), height * 1.08), glowMat);
+    const planeGlow = ignoreRaycast(new THREE.Mesh(new THREE.PlaneGeometry(radius * (complete ? 4.1 : 3.4), height * 1.08), glowMat));
     planeGlow.position.y = height / 2;
     planeGlow.rotation.y = i * Math.PI / 2;
     group.add(planeGlow);
   }
 
-  const coreEdge = new THREE.LineSegments(
+  const coreEdge = ignoreRaycast(new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.CylinderGeometry(radius, radius, height, 24)),
     new THREE.LineBasicMaterial({
       color,
       transparent: true,
       opacity: complete ? 0.45 : 0.3,
     }),
-  );
+  ));
   coreEdge.position.copy(core.position);
   group.add(coreEdge);
 
@@ -145,7 +150,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean, 
       torus.rotation.x = Math.PI / 2;
       group.add(torus);
 
-      const ringGlow = new THREE.Mesh(new THREE.TorusGeometry(radius * 2.45, 0.105, 12, 72), ringGlowMat);
+      const ringGlow = ignoreRaycast(new THREE.Mesh(new THREE.TorusGeometry(radius * 2.45, 0.105, 12, 72), ringGlowMat));
       ringGlow.position.y = y;
       ringGlow.rotation.x = Math.PI / 2;
       group.add(ringGlow);
@@ -161,7 +166,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean, 
     group.add(nodeLight);
   } else {
     const remaining = Math.ceil(node.targetEnergy - node.contribution);
-    const progress = createTextSprite(`${Math.floor(node.contribution)} / ${node.targetEnergy}  needs ${remaining}`, '#ff4b4b');
+    const progress = ignoreRaycast(createTextSprite(`${Math.floor(node.contribution)} / ${node.targetEnergy}  needs ${remaining}`, '#ff4b4b'));
     progress.position.y = height + 0.55;
     group.add(progress);
 
@@ -181,7 +186,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean, 
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(node.radius, 96), fieldMat);
+    const disc = ignoreRaycast(new THREE.Mesh(new THREE.CircleGeometry(node.radius, 96), fieldMat));
     disc.rotation.x = -Math.PI / 2;
     disc.position.y = 0.012;
     group.add(disc);
@@ -194,7 +199,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean, 
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(node.radius, 0.035, 8, 128), ringMatField);
+    const ring = ignoreRaycast(new THREE.Mesh(new THREE.TorusGeometry(node.radius, 0.035, 8, 128), ringMatField));
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.025;
     group.add(ring);
@@ -207,7 +212,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean, 
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const shimmer = new THREE.Mesh(new THREE.CylinderGeometry(node.radius, node.radius, 0.75, 96, 1, true), shimmerMat);
+    const shimmer = ignoreRaycast(new THREE.Mesh(new THREE.CylinderGeometry(node.radius, node.radius, 0.75, 96, 1, true), shimmerMat));
     shimmer.position.y = 0.38;
     group.add(shimmer);
   }
