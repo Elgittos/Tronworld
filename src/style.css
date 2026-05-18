@@ -351,7 +351,7 @@ input[type="range"] {
 
 .glow-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
   gap: 8px;
   margin-top: 8px;
   max-width: 960px;
@@ -359,21 +359,32 @@ input[type="range"] {
 
 .glow-grid label {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 6px 8px;
+  min-height: 54px;
   border: 1px solid rgba(136, 255, 255, 0.2);
   background: rgba(2, 6, 16, 0.58);
-  padding: 7px 8px;
+  padding: 7px 9px 8px;
   font-size: 12px;
 }
 
+.glow-grid label span {
+  min-width: 0;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
 .glow-grid input {
-  min-width: 58px;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  min-width: 0;
 }
 
 .glow-grid strong {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 22px;
   font-weight: 600;
   text-align: right;

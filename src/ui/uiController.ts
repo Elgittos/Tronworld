@@ -106,7 +106,7 @@ export class UIController {
             <strong data-tesla-glow-value>42</strong>
           </label>
           <label>
-            <span>T Bloom</span>
+            <span>Tesla Bloom</span>
             <input id="teslaBloom" type="range" min="0" max="100" step="1" value="55" />
             <strong data-tesla-bloom-value>55</strong>
           </label>
@@ -116,7 +116,7 @@ export class UIController {
             <strong data-unfinished-tesla-glow-value>38</strong>
           </label>
           <label>
-            <span>U Bloom</span>
+            <span>Unfinished Bloom</span>
             <input id="unfinishedTeslaBloom" type="range" min="0" max="100" step="1" value="42" />
             <strong data-unfinished-tesla-bloom-value>42</strong>
           </label>
@@ -126,7 +126,7 @@ export class UIController {
             <strong data-reactor-glow-value>44</strong>
           </label>
           <label>
-            <span>R Bloom</span>
+            <span>Reactor Bloom</span>
             <input id="reactorBloom" type="range" min="0" max="100" step="1" value="54" />
             <strong data-reactor-bloom-value>54</strong>
           </label>
