@@ -55,9 +55,9 @@ function getEnergyVisualState(avatar: AvatarState): EnergyVisualState {
     reactor,
     body: DARK_BODY,
     bodyGlow: tint,
-    bodyGlowIntensity: 0.06,
-    edge: tint,
-    edgeOpacity: 0.3,
+      bodyGlowIntensity: 0.04,
+      edge: tint,
+      edgeOpacity: 0.42,
     eyes: tint,
     eyeIntensity: avatar.energy > 25 ? 1.05 : 0.82,
     active: true,
@@ -67,7 +67,7 @@ function getEnergyVisualState(avatar: AvatarState): EnergyVisualState {
 export class AvatarVisual {
   readonly group = new THREE.Group();
 
-  private readonly bodyMat: THREE.MeshStandardMaterial;
+  private readonly bodyMat: THREE.MeshPhysicalMaterial;
   private readonly eyeMat: THREE.MeshStandardMaterial;
   private readonly ringMat: THREE.MeshStandardMaterial;
   private readonly glowSpriteMat: THREE.SpriteMaterial;
@@ -84,12 +84,15 @@ export class AvatarVisual {
   constructor(avatar: AvatarState) {
     const tint = new THREE.Color(avatar.color);
 
-    this.bodyMat = new THREE.MeshStandardMaterial({
+    this.bodyMat = new THREE.MeshPhysicalMaterial({
       color: DARK_BODY,
       emissive: tint,
-      emissiveIntensity: 0.06,
-      roughness: 0.12,
-      metalness: 0.9,
+      emissiveIntensity: 0.04,
+      roughness: 0.18,
+      metalness: 0.58,
+      clearcoat: 1,
+      clearcoatRoughness: 0.06,
+      reflectivity: 0.74,
     });
     this.eyeMat = new THREE.MeshStandardMaterial({
       color: tint,
@@ -119,7 +122,7 @@ export class AvatarVisual {
     this.edgeMat = new THREE.LineBasicMaterial({
       color: tint,
       transparent: true,
-      opacity: 0.3,
+      opacity: 0.42,
       depthWrite: false,
     });
 
@@ -195,12 +198,9 @@ export class AvatarVisual {
     head.position.set(0, headY, 0);
     this.group.add(head);
 
-    const headEdge = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.SphereGeometry(0.181, 16, 16)),
-      this.edgeMat,
-    );
-    headEdge.position.copy(head.position);
-    this.group.add(headEdge);
+    const headLattice = this.createSphereLattice(0.184, 6, 8);
+    headLattice.position.copy(head.position);
+    this.group.add(headLattice);
 
     this.createEyes(eyeY);
 
@@ -209,9 +209,9 @@ export class AvatarVisual {
     torso.position.set(0, torsoY, 0);
     this.group.add(torso);
 
-    const torsoEdge = new THREE.LineSegments(new THREE.EdgesGeometry(torsoGeo), this.edgeMat);
-    torsoEdge.position.copy(torso.position);
-    this.group.add(torsoEdge);
+    const torsoLattice = this.createCylinderLattice(0.123, 0.35, 5, 8);
+    torsoLattice.position.copy(torso.position);
+    this.group.add(torsoLattice);
 
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.046, 0.088, 32), this.ringMat);
     ring.position.set(0, chestY, 0.124);
@@ -235,35 +235,151 @@ export class AvatarVisual {
     this.group.add(twinDots);
   }
 
+  private createSphereLattice(radius: number, latitudeCount: number, meridianCount: number): THREE.Group {
+    const group = new THREE.Group();
+
+    for (let i = 1; i <= latitudeCount; i += 1) {
+      const y = -radius + (i / (latitudeCount + 1)) * radius * 2;
+      const ringRadius = Math.sqrt(Math.max(0, radius * radius - y * y));
+      group.add(this.createCircleLoop(ringRadius, y, 56));
+    }
+
+    for (let i = 0; i < meridianCount; i += 1) {
+      const angle = (i / meridianCount) * Math.PI;
+      const points: THREE.Vector3[] = [];
+
+      for (let step = 0; step < 64; step += 1) {
+        const theta = (step / 64) * Math.PI * 2;
+        const y = Math.sin(theta) * radius;
+        const ringRadius = Math.cos(theta) * radius;
+        points.push(new THREE.Vector3(Math.cos(angle) * ringRadius, y, Math.sin(angle) * ringRadius));
+      }
+
+      group.add(this.createLineLoop(points));
+    }
+
+    return group;
+  }
+
+  private createCylinderLattice(
+    radius: number,
+    height: number,
+    ringCount: number,
+    meridianCount: number,
+  ): THREE.Group {
+    const group = new THREE.Group();
+
+    for (let i = 0; i < ringCount; i += 1) {
+      const y = -height / 2 + (i / Math.max(1, ringCount - 1)) * height;
+      group.add(this.createCircleLoop(radius, y, 48));
+    }
+
+    for (let i = 0; i < meridianCount; i += 1) {
+      const angle = (i / meridianCount) * Math.PI * 2;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      group.add(this.createLine([new THREE.Vector3(x, -height / 2, z), new THREE.Vector3(x, height / 2, z)]));
+    }
+
+    return group;
+  }
+
+  private createCapsuleLattice(
+    radius: number,
+    length: number,
+    ringCount: number,
+    meridianCount: number,
+  ): THREE.Group {
+    const group = new THREE.Group();
+    const halfLength = length / 2;
+    const halfHeight = halfLength + radius;
+
+    for (let i = 1; i <= ringCount; i += 1) {
+      const y = -halfHeight + (i / (ringCount + 1)) * halfHeight * 2;
+      const ringRadius = this.capsuleRadiusAtY(y, radius, halfLength);
+
+      if (ringRadius > 0.006) {
+        group.add(this.createCircleLoop(ringRadius, y, 28));
+      }
+    }
+
+    for (let i = 0; i < meridianCount; i += 1) {
+      const angle = (i / meridianCount) * Math.PI * 2;
+      const points: THREE.Vector3[] = [];
+
+      for (let step = 0; step <= 28; step += 1) {
+        const y = -halfHeight + (step / 28) * halfHeight * 2;
+        const ringRadius = this.capsuleRadiusAtY(y, radius, halfLength);
+        points.push(new THREE.Vector3(Math.cos(angle) * ringRadius, y, Math.sin(angle) * ringRadius));
+      }
+
+      group.add(this.createLine(points));
+    }
+
+    return group;
+  }
+
+  private capsuleRadiusAtY(y: number, radius: number, halfLength: number): number {
+    if (y > halfLength) {
+      return Math.sqrt(Math.max(0, radius * radius - (y - halfLength) ** 2));
+    }
+
+    if (y < -halfLength) {
+      return Math.sqrt(Math.max(0, radius * radius - (y + halfLength) ** 2));
+    }
+
+    return radius;
+  }
+
+  private createCircleLoop(radius: number, y: number, segments: number): THREE.LineLoop {
+    const points: THREE.Vector3[] = [];
+
+    for (let i = 0; i < segments; i += 1) {
+      const angle = (i / segments) * Math.PI * 2;
+      points.push(new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius));
+    }
+
+    return this.createLineLoop(points);
+  }
+
+  private createLineLoop(points: THREE.Vector3[]): THREE.LineLoop {
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    return new THREE.LineLoop(geometry, this.edgeMat);
+  }
+
+  private createLine(points: THREE.Vector3[]): THREE.Line {
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    return new THREE.Line(geometry, this.edgeMat);
+  }
+
   private buildLimbs(): AvatarVisual['limbs'] {
     const armPivotY = 1.235;
     const armGeo = new THREE.CapsuleGeometry(0.04, 0.22, 6, 12);
     const legGeo = new THREE.CapsuleGeometry(0.045, 0.16, 6, 12);
-    const armEdgeGeo = new THREE.EdgesGeometry(armGeo);
-    const legEdgeGeo = new THREE.EdgesGeometry(legGeo);
 
     const makeLimb = (
       pivotPosition: THREE.Vector3,
       limbPosition: THREE.Vector3,
       geometry: THREE.BufferGeometry,
-      edgeGeometry: THREE.EdgesGeometry,
+      radius: number,
+      length: number,
     ): THREE.Group => {
       const pivot = new THREE.Group();
       pivot.position.copy(pivotPosition);
       const mesh = new THREE.Mesh(geometry, this.bodyMat);
       mesh.position.copy(limbPosition);
-      const edges = new THREE.LineSegments(edgeGeometry, this.edgeMat);
-      edges.position.copy(limbPosition);
-      pivot.add(mesh, edges);
+      const lattice = this.createCapsuleLattice(radius, length, 5, 6);
+      lattice.position.copy(limbPosition);
+      pivot.add(mesh, lattice);
       this.group.add(pivot);
       return pivot;
     };
 
     return {
-      leftArm: makeLimb(new THREE.Vector3(-0.18, armPivotY, 0), new THREE.Vector3(0, -0.15, 0), armGeo, armEdgeGeo),
-      rightArm: makeLimb(new THREE.Vector3(0.18, armPivotY, 0), new THREE.Vector3(0, -0.15, 0), armGeo, armEdgeGeo),
-      leftLeg: makeLimb(new THREE.Vector3(-0.06, 0.92, 0), new THREE.Vector3(0, -0.12, 0), legGeo, legEdgeGeo),
-      rightLeg: makeLimb(new THREE.Vector3(0.06, 0.92, 0), new THREE.Vector3(0, -0.12, 0), legGeo, legEdgeGeo),
+      leftArm: makeLimb(new THREE.Vector3(-0.18, armPivotY, 0), new THREE.Vector3(0, -0.15, 0), armGeo, 0.041, 0.22),
+      rightArm: makeLimb(new THREE.Vector3(0.18, armPivotY, 0), new THREE.Vector3(0, -0.15, 0), armGeo, 0.041, 0.22),
+      leftLeg: makeLimb(new THREE.Vector3(-0.06, 0.92, 0), new THREE.Vector3(0, -0.12, 0), legGeo, 0.046, 0.16),
+      rightLeg: makeLimb(new THREE.Vector3(0.06, 0.92, 0), new THREE.Vector3(0, -0.12, 0), legGeo, 0.046, 0.16),
     };
   }
 }
