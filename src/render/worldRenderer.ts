@@ -56,9 +56,10 @@ type VisualEntry = {
   signature: string;
 };
 
-const GRID_COLOR = 0x00ff88;
 const BACKGROUND_COLOR = 0x020610;
 const CAMERA_HEIGHT = 1.62;
+const WORLD_GRID_SPAN = 4096;
+const WORLD_GRID_MAJOR_STEP = 4;
 export const THIRD_PERSON_MIN_ZOOM = 1.08;
 export const THIRD_PERSON_DEFAULT_ZOOM = 5.4;
 export const THIRD_PERSON_MAX_ZOOM = 10.5;
@@ -107,6 +108,7 @@ export class WorldRenderer {
     this.groundPlane.rotation.x = -Math.PI / 2;
     applyRaycastMeta(this.groundPlane, 'floor', 'floor');
     this.scene.add(this.groundPlane);
+    this.scene.add(this.createWorldGrid());
 
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.28));
     const directional = new THREE.DirectionalLight(0xffffff, 0.68);
@@ -345,20 +347,54 @@ export class WorldRenderer {
     base.rotation.x = -Math.PI / 2;
     base.position.set(centerX, -0.012, centerZ);
 
-    const fineGrid = new THREE.GridHelper(size, size, GRID_COLOR, GRID_COLOR);
-    fineGrid.position.set(centerX, 0.002, centerZ);
-    const fineMat = fineGrid.material as THREE.Material;
-    fineMat.transparent = true;
-    fineMat.opacity = 0.075;
-
-    const majorGrid = new THREE.GridHelper(size, 4, 0x88ffff, GRID_COLOR);
-    majorGrid.position.set(centerX, 0.004, centerZ);
-    const majorMat = majorGrid.material as THREE.Material;
-    majorMat.transparent = true;
-    majorMat.opacity = 0.16;
-
-    group.add(base, fineGrid, majorGrid);
+    group.add(base);
     return group;
+  }
+
+  private createWorldGrid(): THREE.Group {
+    const group = new THREE.Group();
+    group.add(this.createGridLayer(1, 0.012, 0x00684f, -0.004, WORLD_GRID_MAJOR_STEP));
+    group.add(this.createGridLayer(WORLD_GRID_MAJOR_STEP, 0.032, 0x00b78f, -0.003));
+    return group;
+  }
+
+  private createGridLayer(step: number, width: number, color: number, y: number, skipEvery?: number): THREE.Mesh {
+    const half = WORLD_GRID_SPAN / 2;
+    const halfWidth = width / 2;
+    const positions: number[] = [];
+
+    for (let value = -half; value <= half; value += step) {
+      if (skipEvery && value % skipEvery === 0) {
+        continue;
+      }
+
+      positions.push(
+        value - halfWidth, y, -half,
+        value + halfWidth, y, -half,
+        value + halfWidth, y, half,
+        value - halfWidth, y, -half,
+        value + halfWidth, y, half,
+        value - halfWidth, y, half,
+      );
+
+      positions.push(
+        -half, y, value - halfWidth,
+        half, y, value - halfWidth,
+        half, y, value + halfWidth,
+        -half, y, value - halfWidth,
+        half, y, value + halfWidth,
+        -half, y, value + halfWidth,
+      );
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      side: THREE.DoubleSide,
+    });
+    material.toneMapped = false;
+    return new THREE.Mesh(geometry, material);
   }
 
   private updateCamera(
@@ -548,9 +584,9 @@ export class WorldRenderer {
 
   private snapFloorPlacement(point: Vec3, shapeSize: Vec3): Vec3 {
     return {
-      x: Math.round(point.x),
+      x: Math.floor(point.x) + 0.5,
       y: shapeSize.y / 2,
-      z: Math.round(point.z),
+      z: Math.floor(point.z) + 0.5,
     };
   }
 

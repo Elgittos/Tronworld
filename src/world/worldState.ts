@@ -36,7 +36,7 @@ const DEFAULT_MOTIVATORS: Motivators = {
 };
 
 const WORLD_EDITS_STORAGE_KEY = 'tron-world:world-edits:v1';
-const PERSISTENCE_VERSION = 1;
+const PERSISTENCE_VERSION = 2;
 
 type PersistedWorldEdits = {
   version: typeof PERSISTENCE_VERSION;
@@ -406,6 +406,7 @@ export class WorldState {
     try {
       const saved = JSON.parse(raw) as Partial<PersistedWorldEdits>;
       if (saved.version !== PERSISTENCE_VERSION) {
+        storage.removeItem(WORLD_EDITS_STORAGE_KEY);
         return;
       }
 
