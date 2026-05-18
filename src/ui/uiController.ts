@@ -18,7 +18,7 @@ export class UIController {
   selectedColor = COLORS[0];
   rotation: 0 | 90 | 180 | 270 = 0;
   freeCameraSpeed = 10;
-  glowLevel = 34;
+  glowLevel = 22;
   teslaContribution = 0;
   transferCap = 0;
 
@@ -85,8 +85,8 @@ export class UIController {
           </div>
           <div class="glow-control">
             <label for="glowLevel">Glow</label>
-            <input id="glowLevel" type="range" min="0" max="100" step="1" value="34" />
-            <span data-glow-value>34</span>
+            <input id="glowLevel" type="range" min="0" max="100" step="1" value="22" />
+            <span data-glow-value>22</span>
           </div>
         </div>
         <div class="hud-lines">

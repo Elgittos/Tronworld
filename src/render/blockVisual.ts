@@ -2,16 +2,14 @@ import * as THREE from 'three';
 import { BlockInstance, BlockShape, BLOCK_DEFINITIONS } from '../world/types';
 import { applyRaycastMeta, createRampGeometry } from './geometry';
 
-function materialForColor(color: string, opacity = 0.72): THREE.MeshStandardMaterial {
+function materialForColor(color: string): THREE.MeshStandardMaterial {
   const tint = new THREE.Color(color);
   return new THREE.MeshStandardMaterial({
-    color: tint.clone().multiplyScalar(0.45),
+    color: tint.clone().multiplyScalar(0.28),
     emissive: tint,
-    emissiveIntensity: 0.28,
-    metalness: 0.55,
-    roughness: 0.32,
-    transparent: true,
-    opacity,
+    emissiveIntensity: 0.12,
+    metalness: 0.62,
+    roughness: 0.42,
   });
 }
 
@@ -43,7 +41,7 @@ export function createBlockVisual(block: BlockInstance): THREE.Group {
     new THREE.LineBasicMaterial({
       color: block.color,
       transparent: true,
-      opacity: 0.58,
+      opacity: 0.86,
     }),
   );
 
@@ -60,7 +58,7 @@ export function createGhostVisual(shape: BlockShape): THREE.Group {
   const material = new THREE.MeshBasicMaterial({
     color: 0x00ff88,
     transparent: true,
-    opacity: 0.28,
+    opacity: 0.22,
     depthWrite: false,
   });
   const mesh = new THREE.Mesh(geometry, material);
@@ -69,7 +67,7 @@ export function createGhostVisual(shape: BlockShape): THREE.Group {
     new THREE.LineBasicMaterial({
       color: 0x00ff88,
       transparent: true,
-      opacity: 0.9,
+      opacity: 1,
     }),
   );
 

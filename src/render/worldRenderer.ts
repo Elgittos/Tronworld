@@ -141,9 +141,9 @@ export class WorldRenderer {
 
   setGlowLevel(level: number): void {
     const normalized = THREE.MathUtils.clamp(level, 0, 100) / 100;
-    this.bloomPass.strength = 0.04 + normalized * 0.7;
-    this.bloomPass.radius = 0.16 + normalized * 0.38;
-    this.bloomPass.threshold = 0.82 - normalized * 0.18;
+    this.bloomPass.strength = 0.02 + normalized * 0.58;
+    this.bloomPass.radius = 0.12 + normalized * 0.3;
+    this.bloomPass.threshold = 0.88 - normalized * 0.16;
   }
 
   getPlacementCandidate(
@@ -345,9 +345,7 @@ export class WorldRenderer {
     const base = new THREE.Mesh(
       new THREE.PlaneGeometry(size, size),
       new THREE.MeshBasicMaterial({
-        color: 0x030914,
-        transparent: true,
-        opacity: 0.58,
+        color: 0x020711,
         side: THREE.DoubleSide,
       }),
     );
@@ -358,13 +356,13 @@ export class WorldRenderer {
     fineGrid.position.set(centerX, 0.002, centerZ);
     const fineMat = fineGrid.material as THREE.Material;
     fineMat.transparent = true;
-    fineMat.opacity = 0.04;
+    fineMat.opacity = 0.075;
 
     const majorGrid = new THREE.GridHelper(size, 4, 0x88ffff, GRID_COLOR);
     majorGrid.position.set(centerX, 0.004, centerZ);
     const majorMat = majorGrid.material as THREE.Material;
     majorMat.transparent = true;
-    majorMat.opacity = 0.1;
+    majorMat.opacity = 0.16;
 
     group.add(base, fineGrid, majorGrid);
     return group;
