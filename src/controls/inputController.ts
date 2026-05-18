@@ -246,11 +246,11 @@ export class InputController {
       }
 
       const avatar = this.callbacks.getAvatar();
-      if (!avatar || avatar.shutdown) {
+      if (!avatar) {
         return;
       }
 
-      if (this.rightMouseHeld) {
+      if (this.rightMouseHeld && !avatar.shutdown) {
         avatar.yaw -= event.movementX * sensitivity;
         avatar.pitch = THREE.MathUtils.clamp(avatar.pitch - event.movementY * sensitivity, -1.1, 1.1);
       } else if (this.leftMouseHeld && mode === 'third_person') {
