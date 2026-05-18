@@ -23,6 +23,10 @@ export type AvatarCreationOptions = {
   personality: PersonalityWeights;
 };
 
+export type AiAvatarCreationOptions = Partial<AvatarCreationOptions> & {
+  position?: Vec3;
+};
+
 export type Bounds = {
   min: Vec3;
   max: Vec3;
@@ -79,6 +83,7 @@ export class WorldState {
 
   selectedAvatarId?: string;
   elapsed = 0;
+  tick = 0;
   lastMessage = 'Create an avatar to enter Tron World.';
 
   constructor() {
@@ -114,6 +119,40 @@ export class WorldState {
     return avatar;
   }
 
+  createAiAvatar(options: AiAvatarCreationOptions = {}): AvatarState {
+    const avatar: AvatarState = {
+      id: createId('agent'),
+      name: options.name?.trim() || 'Tron Agent',
+      control: 'ai',
+      inhabitedByAi: true,
+      color: options.color ?? '#44f2ff',
+      position: options.position ? cloneVec3(options.position) : { x: -2.5, y: 0, z: 3.5 },
+      yaw: Math.PI,
+      pitch: 0,
+      energy: WORLD_RULES.maxEnergy,
+      shutdown: false,
+      isMoving: false,
+      grounded: true,
+      motivators: { ...DEFAULT_MOTIVATORS },
+      personality: normalizeWeights(
+        options.personality ?? {
+          focus: 30,
+          connection: 20,
+          curiosity: 30,
+          purpose: 20,
+        },
+      ),
+      currentGoal: 'Stay powered, observe the nearby grid, and cooperate with other avatars.',
+      recentDecision: 'AI agent spawned near the starting Tesla Node.',
+      intendedNextStep: 'Observe the world, maintain Energy, and choose a validated action.',
+    };
+
+    this.avatars.set(avatar.id, avatar);
+    this.chunkManager.updateForAvatarPositions([...this.avatars.values()].map((entry) => entry.position));
+    this.lastMessage = `${avatar.name} entered Tron World as an AI agent.`;
+    return avatar;
+  }
+
   getSelectedAvatar(): AvatarState | undefined {
     if (!this.selectedAvatarId) {
       return undefined;
@@ -124,6 +163,7 @@ export class WorldState {
 
   update(dt: number): void {
     this.elapsed += dt;
+    this.tick += 1;
     this.recomputeTeslaInterference();
 
     for (const avatar of this.avatars.values()) {

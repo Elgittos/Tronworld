@@ -1,10 +1,13 @@
 import * as THREE from 'three';
 import './style.css';
 import { ActionResult, ActionSystem } from './actions/actions';
+import { AgentBrainGateway } from './agents/AgentBrainGateway';
 import { InputController } from './controls/inputController';
+import { DEFAULT_LM_STUDIO_CONFIG, LLMProviderConfig } from './llm/LLMProviderConfig';
 import { PhysicsSystem } from './physics/physicsSystem';
 import { UIController } from './ui/uiController';
 import { CameraMode, distance2D, WORLD_RULES } from './world/types';
+import { WorldEventLog } from './world/WorldEvents';
 import { WorldState } from './world/worldState';
 import { WorldRenderer } from './render/worldRenderer';
 
@@ -16,6 +19,8 @@ if (!app) {
 
 const world = new WorldState();
 const actionSystem = new ActionSystem(world);
+const eventLog = new WorldEventLog();
+const agentGateway = new AgentBrainGateway(world, actionSystem, eventLog, loadLlmConfig());
 const renderer = new WorldRenderer(app);
 const physics = await PhysicsSystem.create();
 let cameraMode: CameraMode = 'third_person';
@@ -32,6 +37,8 @@ ui = new UIController({
   onCreateAvatar: (options) => {
     const avatar = world.createManualAvatar(options);
     physics.createAvatar(avatar.id, avatar.position);
+    ensureAiAgent();
+    ui.startAmbientAudio();
     controls.freeCamera.position.copy(new THREE.Vector3(avatar.position.x + 5, 4.5, avatar.position.z + 7));
     world.lastMessage = `${avatar.name} is online near the starting Tesla Node.`;
   },
@@ -68,6 +75,7 @@ function tick(now: number): void {
   let avatarMoving = false;
 
   controls.updateFreeCamera(dt);
+  agentGateway.update(now);
 
   if (avatar && cameraMode !== 'free_camera') {
     const move = controls.getAvatarMove(avatar, dt);
@@ -82,6 +90,8 @@ function tick(now: number): void {
       world.markAvatarMoved(avatar.id);
     }
   }
+
+  updateAiAgents(dt, now);
 
   controls.updateHeldCamera(dt, cameraMode === 'third_person' && avatarMoving);
 
@@ -100,6 +110,56 @@ function tick(now: number): void {
   ui.update(world, placementResult ?? lastActionResult, contextText);
 
   requestAnimationFrame(tick);
+}
+
+function ensureAiAgent(): void {
+  if ([...world.avatars.values()].some((avatar) => avatar.control === 'ai')) {
+    return;
+  }
+
+  const agent = world.createAiAvatar({
+    name: 'Grid Witness',
+    color: '#44f2ff',
+    position: { x: -2.5, y: 0, z: 3.5 },
+    personality: {
+      focus: 30,
+      connection: 22,
+      curiosity: 30,
+      purpose: 18,
+    },
+  });
+  physics.createAvatar(agent.id, agent.position);
+}
+
+function updateAiAgents(dt: number, now: number): void {
+  for (const agent of world.avatars.values()) {
+    if (agent.control !== 'ai') {
+      continue;
+    }
+
+    const move = agentGateway.getMoveFrame(agent.id, now, ui.avatarWalkSpeed);
+    const physicsResult = physics.moveAvatar(agent.id, move.velocity, move.jump, dt);
+
+    if (physicsResult) {
+      world.updateAvatarPose(agent.id, physicsResult.position, agent.yaw, agent.pitch, physicsResult.grounded);
+    }
+
+    if (move.moving) {
+      world.markAvatarMoved(agent.id);
+    }
+  }
+}
+
+function loadLlmConfig(): LLMProviderConfig {
+  const storage = typeof window === 'undefined' ? undefined : window.localStorage;
+
+  return {
+    ...DEFAULT_LM_STUDIO_CONFIG,
+    provider: (storage?.getItem('tron-world:llm-provider') as LLMProviderConfig['provider'] | null) ?? DEFAULT_LM_STUDIO_CONFIG.provider,
+    baseUrl: storage?.getItem('tron-world:llm-base-url') ?? DEFAULT_LM_STUDIO_CONFIG.baseUrl,
+    model: storage?.getItem('tron-world:llm-model') ?? DEFAULT_LM_STUDIO_CONFIG.model,
+    apiKey: storage?.getItem('tron-world:llm-api-key') ?? DEFAULT_LM_STUDIO_CONFIG.apiKey,
+  };
 }
 
 function handlePrimaryAction(): void {

@@ -2,6 +2,7 @@ import { ActionResult } from '../actions/actions';
 import type { GlowSettings } from '../render/worldRenderer';
 import { AvatarState, BlockShape, BLOCK_DEFINITIONS, CameraMode, PersonalityWeights, WORLD_RULES } from '../world/types';
 import { WorldState } from '../world/worldState';
+import { AmbientAudio } from './ambientAudio';
 
 type UICallbacks = {
   onCreateAvatar: (options: { name: string; color: string; personality: PersonalityWeights }) => void;
@@ -10,6 +11,12 @@ type UICallbacks = {
 
 const SHAPES: BlockShape[] = ['cube', 'half_cube', 'ramp', 'tile', 'pillar', 'tesla_node'];
 const COLORS = ['#00ff88', '#44f2ff', '#2f7dff', '#00d4c8', '#9b7cff', '#d34dff'];
+const AMBIENT_TRACKS = [
+  '/audio/ambient/Grid_Ambience_Suite_2026-05-18T195753.mp3',
+  '/audio/ambient/Grid_Ambience_Suite_2026-05-18T195753%20(1).mp3',
+  '/audio/ambient/Grid_Ambience_Suite_2026-05-18T195753%20(2).mp3',
+  '/audio/ambient/Grid_Ambience_Suite_2026-05-18T195753%20(3).mp3',
+];
 
 export class UIController {
   readonly root: HTMLElement;
@@ -29,6 +36,8 @@ export class UIController {
   reactorBloom = 54;
   eyeGlow = 36;
   eyeBloom = 36;
+  ambientEnabled = true;
+  ambientVolume = 14;
   teslaContribution = 0;
   transferCap = 0;
 
@@ -43,6 +52,7 @@ export class UIController {
   private readonly personalityLine: HTMLElement;
   private readonly povReactorReflection: HTMLElement;
   private readonly freeSpeedWrap: HTMLElement;
+  private readonly ambientAudio = new AmbientAudio(AMBIENT_TRACKS);
   private readonly contributionInput: HTMLInputElement;
   private readonly transferInput: HTMLInputElement;
 
@@ -104,44 +114,56 @@ export class UIController {
             <input id="freeSpeed" type="range" min="3" max="28" step="1" value="10" />
             <span data-free-speed-value>10</span>
           </div>
-          <div class="glow-control">
-            <label for="glowLevel">Tesla Bloom</label>
-            <input id="glowLevel" type="range" min="0" max="100" step="1" value="22" />
-            <span data-glow-value>22</span>
+        </div>
+        <details class="settings-panel">
+          <summary>Settings</summary>
+          <div class="settings-grid">
+            <label class="toggle-row">
+              <span>Ambient music</span>
+              <input id="ambientMusic" type="checkbox" checked />
+            </label>
+            <label>
+              <span>Ambient volume</span>
+              <input id="ambientVolume" type="range" min="0" max="40" step="1" value="14" />
+              <strong data-ambient-volume-value>14</strong>
+            </label>
+            <label>
+              <span>Tesla Bloom</span>
+              <input id="glowLevel" type="range" min="0" max="100" step="1" value="22" />
+              <strong data-glow-value>22</strong>
+            </label>
+            <label>
+              <span>Tesla Glow</span>
+              <input id="teslaGlow" type="range" min="0" max="100" step="1" value="42" />
+              <strong data-tesla-glow-value>42</strong>
+            </label>
+            <label>
+              <span>Tesla Halo</span>
+              <input id="teslaHalo" type="range" min="0" max="100" step="1" value="42" />
+              <strong data-tesla-halo-value>42</strong>
+            </label>
+            <label>
+              <span>Reactor Glow</span>
+              <input id="reactorGlow" type="range" min="0" max="100" step="1" value="44" />
+              <strong data-reactor-glow-value>44</strong>
+            </label>
+            <label>
+              <span>Reactor Bloom</span>
+              <input id="reactorBloom" type="range" min="0" max="100" step="1" value="54" />
+              <strong data-reactor-bloom-value>54</strong>
+            </label>
+            <label>
+              <span>Eyes Glow</span>
+              <input id="eyeGlow" type="range" min="0" max="100" step="1" value="36" />
+              <strong data-eye-glow-value>36</strong>
+            </label>
+            <label>
+              <span>Eyes Bloom</span>
+              <input id="eyeBloom" type="range" min="0" max="100" step="1" value="36" />
+              <strong data-eye-bloom-value>36</strong>
+            </label>
           </div>
-        </div>
-        <div class="glow-grid">
-          <label>
-            <span>Tesla Glow</span>
-            <input id="teslaGlow" type="range" min="0" max="100" step="1" value="42" />
-            <strong data-tesla-glow-value>42</strong>
-          </label>
-          <label>
-            <span>Tesla Halo</span>
-            <input id="teslaHalo" type="range" min="0" max="100" step="1" value="42" />
-            <strong data-tesla-halo-value>42</strong>
-          </label>
-          <label>
-            <span>Reactor Glow</span>
-            <input id="reactorGlow" type="range" min="0" max="100" step="1" value="44" />
-            <strong data-reactor-glow-value>44</strong>
-          </label>
-          <label>
-            <span>Reactor Bloom</span>
-            <input id="reactorBloom" type="range" min="0" max="100" step="1" value="54" />
-            <strong data-reactor-bloom-value>54</strong>
-          </label>
-          <label>
-            <span>Eyes Glow</span>
-            <input id="eyeGlow" type="range" min="0" max="100" step="1" value="36" />
-            <strong data-eye-glow-value>36</strong>
-          </label>
-          <label>
-            <span>Eyes Bloom</span>
-            <input id="eyeBloom" type="range" min="0" max="100" step="1" value="36" />
-            <strong data-eye-bloom-value>36</strong>
-          </label>
-        </div>
+        </details>
         <div class="hud-lines">
           <span data-field-line>Field: --</span>
           <span data-personality-line>Personality: --</span>
@@ -225,6 +247,10 @@ export class UIController {
 
   setStatus(message: string): void {
     this.statusLine.textContent = message;
+  }
+
+  startAmbientAudio(): void {
+    this.ambientAudio.start();
   }
 
   getGlowSettings(): GlowSettings {
@@ -398,6 +424,16 @@ export class UIController {
     });
     this.bindSlider('#eyeBloom', '[data-eye-bloom-value]', (value) => {
       this.eyeBloom = value;
+    });
+    this.bindSlider('#ambientVolume', '[data-ambient-volume-value]', (value) => {
+      this.ambientVolume = value;
+      this.ambientAudio.setVolume(value / 100);
+    });
+
+    const ambientToggle = this.get<HTMLInputElement>('#ambientMusic');
+    ambientToggle.addEventListener('change', () => {
+      this.ambientEnabled = ambientToggle.checked;
+      this.ambientAudio.setEnabled(this.ambientEnabled);
     });
 
     this.bindToggle('[data-orbit-horizontal-toggle]', (active) => {

@@ -16,6 +16,12 @@ export type PersonalityWeights = Record<MotivatorName, number>;
 
 export type ChunkKey = `${number}:${number}`;
 
+export type AttentionTarget = {
+  type: 'agent' | 'avatar' | 'block' | 'structure' | 'tesla_node' | 'position' | 'area';
+  id?: string;
+  position?: Vec3;
+};
+
 export type Chunk = {
   key: ChunkKey;
   cx: number;
@@ -45,6 +51,7 @@ export type AvatarState = {
   recentDecision: string;
   intendedNextStep: string;
   recentFailure?: string;
+  attentionTarget?: AttentionTarget;
 };
 
 export type BlockDefinition = {
