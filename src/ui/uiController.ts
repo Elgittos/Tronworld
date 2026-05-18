@@ -18,8 +18,9 @@ export class UIController {
   selectedShape: BlockShape = 'cube';
   selectedColor = COLORS[0];
   rotation: 0 | 90 | 180 | 270 = 0;
+  orbitInverted = false;
   freeCameraSpeed = 10;
-  glowLevel = 22;
+  sceneBloom = 22;
   teslaGlow = 42;
   unfinishedTeslaGlow = 38;
   reactorGlow = 44;
@@ -83,13 +84,14 @@ export class UIController {
             <button data-mode="avatar_pov">POV</button>
             <button data-mode="free_camera">Free</button>
           </div>
+          <button class="orbit-toggle" data-orbit-toggle>Orbit normal</button>
           <div class="free-speed" data-free-speed-wrap>
             <label for="freeSpeed">Free speed</label>
             <input id="freeSpeed" type="range" min="3" max="28" step="1" value="10" />
             <span data-free-speed-value>10</span>
           </div>
           <div class="glow-control">
-            <label for="glowLevel">World</label>
+            <label for="glowLevel">Bloom</label>
             <input id="glowLevel" type="range" min="0" max="100" step="1" value="22" />
             <span data-glow-value>22</span>
           </div>
@@ -190,6 +192,7 @@ export class UIController {
     this.cameraMode = mode;
     this.modeButtons.forEach((button, key) => button.classList.toggle('active', key === mode));
     this.freeSpeedWrap.classList.toggle('visible', mode === 'free_camera');
+    this.root.querySelector<HTMLButtonElement>('[data-orbit-toggle]')?.classList.toggle('visible', mode === 'third_person');
     this.callbacks.onCameraModeChange(mode);
   }
 
@@ -199,7 +202,7 @@ export class UIController {
 
   getGlowSettings(): GlowSettings {
     return {
-      world: this.glowLevel,
+      sceneBloom: this.sceneBloom,
       tesla: {
         active: this.teslaGlow,
         unfinished: this.unfinishedTeslaGlow,
@@ -319,7 +322,7 @@ export class UIController {
     });
 
     this.bindSlider('#glowLevel', '[data-glow-value]', (value) => {
-      this.glowLevel = value;
+      this.sceneBloom = value;
     });
     this.bindSlider('#teslaGlow', '[data-tesla-glow-value]', (value) => {
       this.teslaGlow = value;
@@ -332,6 +335,13 @@ export class UIController {
     });
     this.bindSlider('#eyeGlow', '[data-eye-glow-value]', (value) => {
       this.eyeGlow = value;
+    });
+
+    const orbitToggle = this.get<HTMLButtonElement>('[data-orbit-toggle]');
+    orbitToggle.addEventListener('click', () => {
+      this.orbitInverted = !this.orbitInverted;
+      orbitToggle.textContent = this.orbitInverted ? 'Orbit inverted' : 'Orbit normal';
+      orbitToggle.classList.toggle('active', this.orbitInverted);
     });
   }
 

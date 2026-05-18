@@ -44,7 +44,7 @@ export type RaycastTarget = {
 };
 
 export type GlowSettings = {
-  world: number;
+  sceneBloom: number;
   tesla: TeslaGlowSettings;
   avatar: AvatarGlowSettings;
 };
@@ -152,7 +152,7 @@ export class WorldRenderer {
   }
 
   setGlowLevel(settings: GlowSettings): void {
-    const normalized = THREE.MathUtils.clamp(settings.world, 0, 100) / 100;
+    const normalized = THREE.MathUtils.clamp(settings.sceneBloom, 0, 100) / 100;
     this.bloomPass.strength = 0.02 + normalized * 0.58;
     this.bloomPass.radius = 0.12 + normalized * 0.3;
     this.bloomPass.threshold = 0.88 - normalized * 0.16;

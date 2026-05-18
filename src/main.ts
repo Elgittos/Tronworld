@@ -44,6 +44,7 @@ controls = new InputController(renderer.renderer.domElement, {
   getMode: () => cameraMode,
   getAvatar: () => world.getSelectedAvatar(),
   getFreeSpeed: () => ui.freeCameraSpeed,
+  getOrbitInverted: () => ui.orbitInverted,
   onToggleBuild: () => ui.toggleBuildPanel(),
   onPrimary: () => handlePrimaryAction(),
   onSecondary: () => handleSecondaryAction(),

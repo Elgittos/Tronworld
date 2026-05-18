@@ -182,6 +182,7 @@ input[type="range"] {
 
 .primary-action,
 .mode-strip button,
+.orbit-toggle,
 .panel-header button,
 .shape-card {
   border: 1px solid rgba(136, 255, 255, 0.28);
@@ -275,17 +276,29 @@ input[type="range"] {
 }
 
 .mode-strip button,
+.orbit-toggle,
 .panel-header button {
   min-height: 36px;
   padding: 0 12px;
 }
 
-.mode-strip button.active {
+.mode-strip button.active,
+.orbit-toggle.active {
   border-color: #00ff88;
   color: #f5fff7;
   box-shadow:
     inset 0 0 18px rgba(0, 255, 136, 0.14),
     0 0 20px rgba(0, 255, 136, 0.18);
+}
+
+.orbit-toggle {
+  display: none;
+  min-width: 116px;
+  font-size: 12px;
+}
+
+.orbit-toggle.visible {
+  display: block;
 }
 
 .free-speed,
@@ -480,6 +493,10 @@ input[type="range"] {
   .mode-strip {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  .orbit-toggle {
+    width: 100%;
   }
 
   .build-panel {

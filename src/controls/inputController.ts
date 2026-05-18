@@ -6,6 +6,7 @@ type InputCallbacks = {
   getMode: () => CameraMode;
   getAvatar: () => AvatarState | undefined;
   getFreeSpeed: () => number;
+  getOrbitInverted: () => boolean;
   onToggleBuild: () => void;
   onPrimary: () => void;
   onSecondary: () => void;
@@ -226,9 +227,10 @@ export class InputController {
         avatar.yaw -= event.movementX * sensitivity;
         avatar.pitch = THREE.MathUtils.clamp(avatar.pitch - event.movementY * sensitivity, -1.1, 1.1);
       } else if (this.leftMouseHeld && mode === 'third_person') {
-        this.thirdPersonCamera.orbitYawOffset -= event.movementX * sensitivity;
+        const orbitDirection = this.callbacks.getOrbitInverted() ? 1 : -1;
+        this.thirdPersonCamera.orbitYawOffset += event.movementX * sensitivity * orbitDirection;
         this.thirdPersonCamera.orbitPitchOffset = THREE.MathUtils.clamp(
-          this.thirdPersonCamera.orbitPitchOffset - event.movementY * sensitivity,
+          this.thirdPersonCamera.orbitPitchOffset + event.movementY * sensitivity * orbitDirection,
           -0.85,
           0.85,
         );
