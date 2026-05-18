@@ -47,6 +47,7 @@ controls = new InputController(renderer.renderer.domElement, {
   getAvatarSpeed: () => ui.avatarWalkSpeed,
   getOrbitHorizontalInverted: () => ui.orbitHorizontalInverted,
   getOrbitVerticalInverted: () => ui.orbitVerticalInverted,
+  getBuildOpen: () => ui.buildOpen,
   onToggleBuild: () => ui.toggleBuildPanel(),
   onPrimary: () => handlePrimaryAction(),
   onSecondary: () => handleSecondaryAction(),
@@ -157,7 +158,7 @@ function handleSecondaryAction(): void {
     return;
   }
 
-  const target = renderer.getLookTarget(world, avatar.id);
+  const target = renderer.getLookTarget(world, avatar.id, controls.pointerNdc);
 
   if (!target || (target.kind !== 'block' && target.kind !== 'tesla_node') || !target.id) {
     lastActionResult = { ok: false, message: 'No removable target.' };

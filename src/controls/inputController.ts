@@ -14,6 +14,7 @@ type InputCallbacks = {
   getAvatarSpeed: () => number;
   getOrbitHorizontalInverted: () => boolean;
   getOrbitVerticalInverted: () => boolean;
+  getBuildOpen: () => boolean;
   onToggleBuild: () => void;
   onPrimary: () => void;
   onSecondary: () => void;
@@ -110,10 +111,11 @@ export class InputController {
       avatar.yaw -= turnSpeed * dt;
     }
 
+    const rightMouseSteering = this.rightMouseHeld && !this.callbacks.getBuildOpen();
     const forward = new THREE.Vector3(Math.sin(avatar.yaw), 0, Math.cos(avatar.yaw));
     const direction = new THREE.Vector3();
 
-    if (this.keys.has('keyw') || this.rightMouseHeld) {
+    if (this.keys.has('keyw') || rightMouseSteering) {
       direction.add(forward);
     }
     if (this.keys.has('keys')) {
@@ -125,7 +127,7 @@ export class InputController {
       direction.normalize().multiplyScalar(this.callbacks.getAvatarSpeed());
     }
 
-    this.thirdPersonCamera.steerFollow = this.rightMouseHeld;
+    this.thirdPersonCamera.steerFollow = rightMouseSteering;
 
     const jump = this.jumpQueued;
     this.jumpQueued = false;
@@ -138,7 +140,7 @@ export class InputController {
   }
 
   updateHeldCamera(dt: number, recenterBehindAvatar: boolean): void {
-    if (this.rightMouseHeld) {
+    if (this.rightMouseHeld && !this.callbacks.getBuildOpen()) {
       this.thirdPersonCamera.orbitYawOffset = 0;
       return;
     }
@@ -212,11 +214,19 @@ export class InputController {
         this.leftMouseDragged = false;
         this.leftMouseDownAt = performance.now();
       } else if (event.button === 2) {
+        if (this.callbacks.getBuildOpen()) {
+          this.rightMouseHeld = false;
+          this.rightMouseDragged = false;
+          this.rightMouseDownAt = performance.now();
+          return;
+        }
+
         this.rightMouseHeld = true;
         this.thirdPersonCamera.steerFollow = true;
         this.thirdPersonCamera.orbitYawOffset = 0;
         this.rightMouseDragged = false;
         this.rightMouseDownAt = performance.now();
+        void this.canvas.requestPointerLock();
       }
     });
 
@@ -291,10 +301,6 @@ export class InputController {
 
       const mode = this.callbacks.getMode();
       if (mode === 'free_camera') {
-        if (this.rightMouseHeld) {
-          this.freeCamera.yaw -= event.movementX * sensitivity;
-          this.freeCamera.pitch = THREE.MathUtils.clamp(this.freeCamera.pitch - event.movementY * sensitivity, -1.25, 1.25);
-        }
         return;
       }
 
@@ -315,9 +321,28 @@ export class InputController {
       }
     });
 
+    document.addEventListener('mousemove', (event) => {
+      if (!this.rightMouseHeld || document.pointerLockElement !== this.canvas) {
+        return;
+      }
+
+      const movedFarEnough = Math.abs(event.movementX) + Math.abs(event.movementY) > 2;
+      if (movedFarEnough) {
+        this.rightMouseDragged = true;
+      }
+
+      this.applyRightMouseLook(event.movementX, event.movementY, 0.004);
+    });
+
     document.addEventListener('mouseup', (event) => {
       if (event.button === 2 && this.rightMouseHeld) {
         this.endRightMouseHold();
+      }
+    });
+
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement !== this.canvas && this.rightMouseHeld) {
+        this.endRightMouseHold(false);
       }
     });
 
@@ -384,8 +409,12 @@ export class InputController {
     );
   }
 
-  private endRightMouseHold(): void {
+  private endRightMouseHold(exitPointerLock = true): void {
     this.rightMouseHeld = false;
     this.thirdPersonCamera.steerFollow = false;
+
+    if (exitPointerLock && document.pointerLockElement === this.canvas) {
+      document.exitPointerLock();
+    }
   }
 }

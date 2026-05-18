@@ -211,8 +211,8 @@ export class WorldRenderer {
     };
   }
 
-  getLookTarget(world: WorldState, avatarId?: string): RaycastTarget | undefined {
-    return this.raycastAt(world, avatarId, new THREE.Vector2(0, 0));
+  getLookTarget(world: WorldState, avatarId?: string, pointerNdc = new THREE.Vector2(0, 0)): RaycastTarget | undefined {
+    return this.raycastAt(world, avatarId, pointerNdc);
   }
 
   updateGhost(candidate: PlacementCandidate | undefined, valid: boolean): void {
