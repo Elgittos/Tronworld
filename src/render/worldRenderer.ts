@@ -9,11 +9,9 @@ import {
   BlockShape,
   BLOCK_DEFINITIONS,
   CameraMode,
-  distance2D,
   PlacementCandidate,
   PlacementTargetKind,
   Vec3,
-  WORLD_RULES,
 } from '../world/types';
 import { WorldState } from '../world/worldState';
 import { AvatarGlowSettings, AvatarVisual } from './avatarVisual';
@@ -64,7 +62,6 @@ const CAMERA_HEIGHT = 1.62;
 export const THIRD_PERSON_MIN_ZOOM = 1.08;
 export const THIRD_PERSON_DEFAULT_ZOOM = 5.4;
 export const THIRD_PERSON_MAX_ZOOM = 10.5;
-const BUILD_FALLBACK_DISTANCE = 3.2;
 
 export class WorldRenderer {
   readonly renderer: THREE.WebGLRenderer;
@@ -172,7 +169,7 @@ export class WorldRenderer {
     avatarId?: string,
     pointerNdc = new THREE.Vector2(0, 0),
   ): PlacementCandidate | undefined {
-    const target = this.getBuildTarget(world, avatarId, pointerNdc);
+    const target = this.raycastAt(world, avatarId, pointerNdc);
 
     if (!target || target.kind === 'avatar') {
       return undefined;
@@ -547,45 +544,6 @@ export class WorldRenderer {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.composer.setSize(window.innerWidth, window.innerHeight);
-  }
-
-  private getAvatarBuildFallbackTarget(world: WorldState, avatarId: string | undefined): RaycastTarget | undefined {
-    if (!avatarId) {
-      return undefined;
-    }
-
-    const avatar = world.avatars.get(avatarId);
-    if (!avatar) {
-      return undefined;
-    }
-
-    return {
-      kind: 'floor',
-      point: {
-        x: avatar.position.x + Math.sin(avatar.yaw) * BUILD_FALLBACK_DISTANCE,
-        y: 0,
-        z: avatar.position.z + Math.cos(avatar.yaw) * BUILD_FALLBACK_DISTANCE,
-      },
-      normal: { x: 0, y: 1, z: 0 },
-    };
-  }
-
-  private getBuildTarget(
-    world: WorldState,
-    avatarId: string | undefined,
-    pointerNdc: THREE.Vector2,
-  ): RaycastTarget | undefined {
-    const target = this.raycastAt(world, avatarId, pointerNdc);
-    if (!target) {
-      return this.getAvatarBuildFallbackTarget(world, avatarId);
-    }
-
-    const avatar = avatarId ? world.avatars.get(avatarId) : undefined;
-    if (avatar && target.kind === 'floor' && distance2D(avatar.position, target.point) > WORLD_RULES.buildReach * 0.92) {
-      return this.getAvatarBuildFallbackTarget(world, avatarId);
-    }
-
-    return target;
   }
 
   private snapFloorPlacement(point: Vec3, shapeSize: Vec3): Vec3 {

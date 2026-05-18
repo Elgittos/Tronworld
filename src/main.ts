@@ -112,7 +112,7 @@ function handlePrimaryAction(): void {
     shape: ui.selectedShape,
     color: ui.selectedColor,
     rotation: ui.rotation,
-  }, avatar.id);
+  }, avatar.id, controls.pointerNdc);
 
   if (!candidate) {
     lastActionResult = { ok: false, message: 'No build surface targeted.' };
@@ -187,7 +187,7 @@ function updateBuildingPreview(): ActionResult | undefined {
     shape: ui.selectedShape,
     color: ui.selectedColor,
     rotation: ui.rotation,
-  }, avatar.id);
+  }, avatar.id, controls.pointerNdc);
 
   if (!candidate) {
     renderer.updateGhost(undefined, false);

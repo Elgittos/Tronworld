@@ -488,6 +488,7 @@ export class UIController {
 
   private refreshBuildPanel(): void {
     this.buildPanel.classList.toggle('open', this.buildOpen);
+    this.root.classList.toggle('build-open', this.buildOpen);
     this.shapeButtons.forEach((button, shape) => {
       button.classList.toggle('active', shape === this.selectedShape);
     });
