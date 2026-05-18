@@ -97,8 +97,8 @@ export class InputController {
     };
   }
 
-  updateHeldCamera(dt: number): void {
-    if (!this.leftMouseHeld) {
+  updateHeldCamera(dt: number, recenterBehindAvatar: boolean): void {
+    if (recenterBehindAvatar && !this.leftMouseHeld) {
       this.thirdPersonCamera.orbitYawOffset = THREE.MathUtils.damp(this.thirdPersonCamera.orbitYawOffset, 0, 7, dt);
       this.thirdPersonCamera.orbitPitchOffset = THREE.MathUtils.damp(this.thirdPersonCamera.orbitPitchOffset, 0, 7, dt);
     }

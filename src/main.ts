@@ -62,12 +62,13 @@ function tick(now: number): void {
   contextText = '';
 
   const avatar = world.getSelectedAvatar();
+  let avatarMoving = false;
 
-  controls.updateHeldCamera(dt);
   controls.updateFreeCamera(dt);
 
   if (avatar && cameraMode !== 'free_camera') {
     const move = controls.getAvatarMove(avatar, dt);
+    avatarMoving = move.moving;
     const physicsResult = physics.moveAvatar(avatar.id, move.velocity, move.jump, dt);
 
     if (physicsResult) {
@@ -78,6 +79,8 @@ function tick(now: number): void {
       world.markAvatarMoved(avatar.id);
     }
   }
+
+  controls.updateHeldCamera(dt, cameraMode === 'third_person' && avatarMoving);
 
   handleHeldInteraction(dt);
 
