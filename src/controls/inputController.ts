@@ -209,7 +209,6 @@ export class InputController {
         this.thirdPersonCamera.orbitYawOffset = 0;
         this.rightMouseDragged = false;
         this.rightMouseDownAt = performance.now();
-        void this.canvas.requestPointerLock();
       }
     });
 
@@ -308,28 +307,9 @@ export class InputController {
       }
     });
 
-    document.addEventListener('mousemove', (event) => {
-      if (!this.rightMouseHeld || document.pointerLockElement !== this.canvas) {
-        return;
-      }
-
-      const movedFarEnough = Math.abs(event.movementX) + Math.abs(event.movementY) > 2;
-      if (movedFarEnough) {
-        this.rightMouseDragged = true;
-      }
-
-      this.applyRightMouseLook(event.movementX, event.movementY, 0.004);
-    });
-
     document.addEventListener('mouseup', (event) => {
       if (event.button === 2 && this.rightMouseHeld) {
         this.endRightMouseHold();
-      }
-    });
-
-    document.addEventListener('pointerlockchange', () => {
-      if (document.pointerLockElement !== this.canvas && this.rightMouseHeld) {
-        this.endRightMouseHold(false);
       }
     });
 
@@ -396,12 +376,8 @@ export class InputController {
     );
   }
 
-  private endRightMouseHold(exitPointerLock = true): void {
+  private endRightMouseHold(): void {
     this.rightMouseHeld = false;
     this.thirdPersonCamera.steerFollow = false;
-
-    if (exitPointerLock && document.pointerLockElement === this.canvas) {
-      document.exitPointerLock();
-    }
   }
 }

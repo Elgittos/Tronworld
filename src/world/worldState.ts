@@ -35,8 +35,30 @@ const DEFAULT_MOTIVATORS: Motivators = {
   purpose: 60,
 };
 
+const WORLD_EDITS_STORAGE_KEY = 'tron-world:world-edits:v1';
+const PERSISTENCE_VERSION = 1;
+
+type PersistedWorldEdits = {
+  version: typeof PERSISTENCE_VERSION;
+  blocks: BlockInstance[];
+  teslaNodes: TeslaNodeState[];
+};
+
 function cloneVec3(v: Vec3): Vec3 {
   return { x: v.x, y: v.y, z: v.z };
+}
+
+function isVec3(value: unknown): value is Vec3 {
+  const vec = value as Vec3 | undefined;
+  return !!vec && Number.isFinite(vec.x) && Number.isFinite(vec.y) && Number.isFinite(vec.z);
+}
+
+function browserStorage(): Storage | undefined {
+  try {
+    return typeof window === 'undefined' ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeWeights(weights: PersonalityWeights): PersonalityWeights {
@@ -61,6 +83,7 @@ export class WorldState {
 
   constructor() {
     this.createStartingTeslaNode();
+    this.loadPersistedWorldEdits();
   }
 
   createManualAvatar(options: AvatarCreationOptions): AvatarState {
@@ -176,6 +199,7 @@ export class WorldState {
     this.blocks.set(block.id, block);
     this.chunkManager.markModifiedAt(block.position);
     this.lastMessage = `Placed ${BLOCK_DEFINITIONS[block.shape].label}.`;
+    this.persistWorldEdits();
     return block;
   }
 
@@ -188,6 +212,7 @@ export class WorldState {
     this.blocks.delete(blockId);
     this.chunkManager.markModifiedAt(block.position);
     this.lastMessage = `Removed ${BLOCK_DEFINITIONS[block.shape].label}.`;
+    this.persistWorldEdits();
     return block;
   }
 
@@ -213,6 +238,7 @@ export class WorldState {
     this.teslaNodes.set(node.id, node);
     this.chunkManager.markModifiedAt(node.position);
     this.lastMessage = node.active ? 'Tesla Node completed.' : 'Tesla Node foundation started.';
+    this.persistWorldEdits();
     return node;
   }
 
@@ -242,6 +268,7 @@ export class WorldState {
       this.lastMessage = `Tesla Node progress: ${Math.floor(node.contribution)} / ${node.targetEnergy}.`;
     }
 
+    this.persistWorldEdits();
     return spend;
   }
 
@@ -254,6 +281,7 @@ export class WorldState {
     this.teslaNodes.delete(nodeId);
     this.chunkManager.markModifiedAt(node.position);
     this.lastMessage = 'Removed Tesla Node.';
+    this.persistWorldEdits();
     return node;
   }
 
@@ -362,6 +390,115 @@ export class WorldState {
     };
 
     this.teslaNodes.set(node.id, node);
+  }
+
+  private loadPersistedWorldEdits(): void {
+    const storage = browserStorage();
+    if (!storage) {
+      return;
+    }
+
+    const raw = storage.getItem(WORLD_EDITS_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+
+    try {
+      const saved = JSON.parse(raw) as Partial<PersistedWorldEdits>;
+      if (saved.version !== PERSISTENCE_VERSION) {
+        return;
+      }
+
+      for (const block of saved.blocks ?? []) {
+        const restored = this.restoreBlock(block);
+        if (restored) {
+          this.blocks.set(restored.id, restored);
+          this.chunkManager.markModifiedAt(restored.position);
+        }
+      }
+
+      for (const node of saved.teslaNodes ?? []) {
+        const restored = this.restoreTeslaNode(node);
+        if (restored) {
+          this.teslaNodes.set(restored.id, restored);
+          this.chunkManager.markModifiedAt(restored.position);
+        }
+      }
+    } catch {
+      storage.removeItem(WORLD_EDITS_STORAGE_KEY);
+    }
+  }
+
+  private persistWorldEdits(): void {
+    const storage = browserStorage();
+    if (!storage) {
+      return;
+    }
+
+    const payload: PersistedWorldEdits = {
+      version: PERSISTENCE_VERSION,
+      blocks: [...this.blocks.values()],
+      teslaNodes: [...this.teslaNodes.values()].filter((node) => !node.starting),
+    };
+
+    try {
+      storage.setItem(WORLD_EDITS_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      this.lastMessage = 'World edit save failed in browser storage.';
+    }
+  }
+
+  private restoreBlock(value: unknown): BlockInstance | undefined {
+    const block = value as Partial<BlockInstance>;
+    const shape = block.shape as BlockShape | undefined;
+    const rotation = block.rotation;
+    const validRotation = rotation === 0 || rotation === 90 || rotation === 180 || rotation === 270;
+
+    if (
+      !block ||
+      typeof block.id !== 'string' ||
+      !shape ||
+      shape === 'tesla_node' ||
+      !(shape in BLOCK_DEFINITIONS) ||
+      !isVec3(block.position) ||
+      !validRotation ||
+      typeof block.color !== 'string' ||
+      typeof block.ownerId !== 'string'
+    ) {
+      return undefined;
+    }
+
+    return {
+      id: block.id,
+      shape: shape as Exclude<BlockShape, 'tesla_node'>,
+      position: cloneVec3(block.position),
+      rotation,
+      color: block.color,
+      ownerId: block.ownerId,
+    };
+  }
+
+  private restoreTeslaNode(value: unknown): TeslaNodeState | undefined {
+    const node = value as Partial<TeslaNodeState>;
+    if (!node || typeof node.id !== 'string' || !isVec3(node.position) || typeof node.ownerId !== 'string') {
+      return undefined;
+    }
+
+    const targetEnergy = Number.isFinite(node.targetEnergy) ? Number(node.targetEnergy) : WORLD_RULES.teslaNodeTargetEnergy;
+    const contribution = clamp(Number(node.contribution) || 0, 0, targetEnergy);
+
+    return {
+      id: node.id,
+      position: cloneVec3(node.position),
+      ownerId: node.ownerId,
+      starting: false,
+      active: Boolean(node.active),
+      contribution,
+      targetEnergy,
+      radius: Number.isFinite(node.radius) ? Number(node.radius) : WORLD_RULES.teslaRadius,
+      height: Number.isFinite(node.height) ? Number(node.height) : 2,
+      interference: Boolean(node.interference),
+    };
   }
 
   private shutdownAvatar(avatar: AvatarState, reason: string): void {
