@@ -1,0 +1,97 @@
+import * as THREE from 'three';
+import { BlockInstance, BlockShape, BLOCK_DEFINITIONS } from '../world/types';
+import { applyRaycastMeta, createRampGeometry } from './geometry';
+
+function materialForColor(color: string, opacity = 0.72): THREE.MeshStandardMaterial {
+  const tint = new THREE.Color(color);
+  return new THREE.MeshStandardMaterial({
+    color: tint.clone().multiplyScalar(0.45),
+    emissive: tint,
+    emissiveIntensity: 0.28,
+    metalness: 0.55,
+    roughness: 0.32,
+    transparent: true,
+    opacity,
+  });
+}
+
+function geometryForShape(shape: BlockShape): THREE.BufferGeometry {
+  const definition = BLOCK_DEFINITIONS[shape];
+
+  switch (shape) {
+    case 'cube':
+    case 'half_cube':
+    case 'tile':
+      return new THREE.BoxGeometry(definition.size.x, definition.size.y, definition.size.z);
+    case 'pillar':
+      return new THREE.CylinderGeometry(definition.size.x / 2, definition.size.x / 2, definition.size.y, 24);
+    case 'ramp':
+      return createRampGeometry();
+    case 'tesla_node':
+      return new THREE.CylinderGeometry(0.36, 0.36, 2, 32);
+    default:
+      return new THREE.BoxGeometry(1, 1, 1);
+  }
+}
+
+export function createBlockVisual(block: BlockInstance): THREE.Group {
+  const group = new THREE.Group();
+  const geometry = geometryForShape(block.shape);
+  const mesh = new THREE.Mesh(geometry, materialForColor(block.color));
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geometry),
+    new THREE.LineBasicMaterial({
+      color: block.color,
+      transparent: true,
+      opacity: 0.58,
+    }),
+  );
+
+  group.add(mesh, edges);
+  group.position.set(block.position.x, block.position.y, block.position.z);
+  group.rotation.y = THREE.MathUtils.degToRad(block.rotation);
+  applyRaycastMeta(group, 'block', block.id);
+  return group;
+}
+
+export function createGhostVisual(shape: BlockShape): THREE.Group {
+  const group = new THREE.Group();
+  const geometry = geometryForShape(shape);
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x00ff88,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geometry),
+    new THREE.LineBasicMaterial({
+      color: 0x00ff88,
+      transparent: true,
+      opacity: 0.9,
+    }),
+  );
+
+  group.add(mesh, edges);
+  return group;
+}
+
+export function updateGhostVisual(group: THREE.Group, valid: boolean): void {
+  const color = valid ? 0x29ff9a : 0xff3030;
+
+  group.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    const material = mesh.material;
+
+    if (Array.isArray(material)) {
+      material.forEach((entry) => {
+        if ('color' in entry) {
+          (entry as THREE.MeshBasicMaterial).color.setHex(color);
+        }
+      });
+    } else if (material && 'color' in material) {
+      (material as THREE.MeshBasicMaterial).color.setHex(color);
+    }
+  });
+}

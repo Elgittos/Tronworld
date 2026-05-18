@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { margin: 0; background: #020610; overflow: hidden; }
+  canvas { display: block; }
+  #info {
+    position: absolute; bottom: 16px; left: 50%;
+    transform: translateX(-50%);
+    color: #00ff8880; font-family: monospace; font-size: 12px;
+    pointer-events: none; user-select: none;
+  }
+  #panel {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-family: monospace;
+    color: #dff;
+    user-select: none;
+    z-index: 10;
+  }
+  #stateButton, #eyeButton {
+    background: rgba(0, 255, 136, 0.08);
+    border: 1px solid rgba(0, 255, 136, 0.5);
+    color: #dff;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: monospace;
+    box-shadow: 0 0 18px rgba(0, 255, 136, 0.18);
+  }
+  #stateButton:hover, #eyeButton:hover { background: rgba(0, 255, 136, 0.16); }
+  #stateLabel { opacity: 0.8; font-size: 12px; min-width: 150px; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <button id="stateButton">Shift state</button>
+  <div id="stateLabel">Energy: full</div>
+  <button id="eyeButton">Shift eyes</button>
+  <div id="eyeLabel">Eyes: twin dots</div>
+</div>
+<div id="info">drag to orbit · scroll to zoom</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x020610);
+scene.fog = new THREE.Fog(0x020610, 5, 14);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(2, 1.4, 2);
+camera.lookAt(0, 0.9, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.3;
+document.body.appendChild(renderer.domElement);
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+const dir = new THREE.DirectionalLight(0xffffff, 0.7);
+dir.position.set(5, 5, 3);
+scene.add(dir);
+const point = new THREE.PointLight(0x00ff88, 0.6, 8);
+point.position.set(0, 2, 2);
+scene.add(point);
+
+// Colors
+const AGENT_GREEN = 0x00ff88;
+const WHITE_REACTOR = 0xf5fff7;
+const ORANGE_REACTOR = 0xff8a1f;
+const RED_REACTOR = 0xff0000;
+const SHUTDOWN_GREY = 0x555d64;
+const DARK_BODY = 0x0a1628;
+const DARKER_SHUTDOWN_BODY = 0x111416;
+
+// Materials
+const bodyMat = new THREE.MeshStandardMaterial({
+  color: DARK_BODY,
+  emissive: AGENT_GREEN,
+  emissiveIntensity: 0.12,
+  roughness: 0.3,
+  metalness: 0.7
+});
+const eyeMat = new THREE.MeshStandardMaterial({
+  color: AGENT_GREEN,
+  emissive: AGENT_GREEN,
+  emissiveIntensity: 1.5,
+  roughness: 0,
+  metalness: 1
+});
+
+// Reactor is a thick ring only. No center disc.
+const ringMat = new THREE.MeshStandardMaterial({
+  color: WHITE_REACTOR,
+  emissive: WHITE_REACTOR,
+  emissiveIntensity: 4.5,
+  roughness: 0.03,
+  metalness: 1,
+  side: THREE.DoubleSide,
+  transparent: true,
+  opacity: 1
+});
+function makeSoftGlowTexture() {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, 12, size / 2, size / 2, size / 2);
+  g.addColorStop(0.00, 'rgba(255,255,255,0.00)');
+  g.addColorStop(0.32, 'rgba(255,255,255,0.00)');
+  g.addColorStop(0.46, 'rgba(255,255,255,0.70)');
+  g.addColorStop(0.72, 'rgba(255,255,255,0.32)');
+  g.addColorStop(1.00, 'rgba(255,255,255,0.00)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
+
+const glowSpriteMat = new THREE.SpriteMaterial({
+  map: makeSoftGlowTexture(),
+  color: WHITE_REACTOR,
+  transparent: true,
+  opacity: 0.5,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+});
+const edgeMat = new THREE.LineBasicMaterial({ color: AGENT_GREEN, transparent: true, opacity: 0.35 });
+
+function makeCapsule(r, h, segs) {
+  const g = new THREE.CylinderGeometry(r, r, h, segs, 1, true);
+  const sTop = new THREE.SphereGeometry(r, segs, segs / 2, 0, Math.PI * 2, 0, Math.PI / 2);
+  sTop.translate(0, h / 2, 0);
+  const sBot = new THREE.SphereGeometry(r, segs, segs / 2, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
+  sBot.translate(0, -h / 2, 0);
+  const merged = new THREE.BufferGeometry();
+  const geoms = [g, sTop, sBot];
+  let totalVerts = 0;
+  geoms.forEach(geo => totalVerts += geo.attributes.position.count);
+  const pos = new Float32Array(totalVerts * 3);
+  const norm = new Float32Array(totalVerts * 3);
+  const idx = [];
+  let vOff = 0;
+  geoms.forEach(geo => {
+    const p = geo.attributes.position.array;
+    const n = geo.attributes.normal.array;
+    for (let i = 0; i < p.length; i++) {
+      pos[vOff * 3 + i] = p[i];
+      norm[vOff * 3 + i] = n[i];
+    }
+    if (geo.index) {
+      const ix = geo.index.array;
+      for (let i = 0; i < ix.length; i++) idx.push(ix[i] + vOff);
+    }
+    vOff += geo.attributes.position.count;
+  });
+  merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  merged.setAttribute('normal', new THREE.BufferAttribute(norm, 3));
+  merged.setIndex(idx);
+  return merged;
+}
+
+// Agent group
+const agent = new THREE.Group();
+scene.add(agent);
+
+// Proportions: shortened neck/torso + lowered head
+const HEAD_Y = 1.47;
+const EYE_Y = 1.49;
+const TORSO_Y = 1.105;
+const CHEST_Y = 1.145;
+const ARM_PIVOT_Y = 1.235;
+
+// Head
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), bodyMat);
+head.position.set(0, HEAD_Y, 0);
+agent.add(head);
+
+// Eyes: current default + 4 alternative suggestions
+const eyeVariants = [];
+let eyeStyleIndex = 0;
+
+function makeEyeGroup(name) {
+  const group = new THREE.Group();
+  group.name = name;
+  group.visible = false;
+  agent.add(group);
+  eyeVariants.push(group);
+  return group;
+}
+
+// 1. Current: twin dots
+const eyesTwinDots = makeEyeGroup('twin dots');
+const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), eyeMat);
+eyeL.position.set(-0.06, EYE_Y, 0.15);
+eyesTwinDots.add(eyeL);
+const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), eyeMat);
+eyeR.position.set(0.06, EYE_Y, 0.15);
+eyesTwinDots.add(eyeR);
+
+// 2. Thin visor: one clean horizontal scan bar
+const eyesVisor = makeEyeGroup('thin visor');
+const visor = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.018, 0.018), eyeMat);
+visor.position.set(0, EYE_Y, 0.155);
+eyesVisor.add(visor);
+
+// 3. Mono scanner: one central eye plus short scan line
+const eyesMono = makeEyeGroup('mono scanner');
+const monoDot = new THREE.Mesh(new THREE.SphereGeometry(0.038, 12, 12), eyeMat);
+monoDot.position.set(0, EYE_Y, 0.158);
+eyesMono.add(monoDot);
+const monoLine = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.012, 0.012), eyeMat);
+monoLine.position.set(0, EYE_Y, 0.148);
+eyesMono.add(monoLine);
+
+// 4. Four pixels: more robotic / sensor-array look
+const eyesFourPixels = makeEyeGroup('four pixels');
+[[-0.055, 0.012], [-0.025, -0.012], [0.025, -0.012], [0.055, 0.012]].forEach(([x, y]) => {
+  const p = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 8), eyeMat);
+  p.position.set(x, EYE_Y + y, 0.158);
+  eyesFourPixels.add(p);
+});
+
+// 5. Angled slits: sharper, more hostile expression
+const eyesSlits = makeEyeGroup('angled slits');
+const slitL = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.014, 0.014), eyeMat);
+slitL.position.set(-0.052, EYE_Y, 0.158);
+slitL.rotation.z = -0.28;
+eyesSlits.add(slitL);
+const slitR = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.014, 0.014), eyeMat);
+slitR.position.set(0.052, EYE_Y, 0.158);
+slitR.rotation.z = 0.28;
+eyesSlits.add(slitR);
+
+function setEyeStyle(index) {
+  eyeStyleIndex = index % eyeVariants.length;
+  eyeVariants.forEach((group, i) => {
+    group.visible = i === eyeStyleIndex;
+  });
+  const label = document.getElementById('eyeLabel');
+  if (label) label.textContent = 'Eyes: ' + eyeVariants[eyeStyleIndex].name;
+}
+
+setEyeStyle(0);
+
+// Torso
+const torsoGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.35, 16);
+const torso = new THREE.Mesh(torsoGeo, bodyMat);
+torso.position.set(0, TORSO_Y, 0);
+agent.add(torso);
+const torsoEdge = new THREE.LineSegments(new THREE.EdgesGeometry(torsoGeo), edgeMat);
+torsoEdge.position.copy(torso.position);
+agent.add(torsoEdge);
+
+// Chest reactor: thick bright ring only + larger transparent glow halo
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.046, 0.088, 32), ringMat);
+ring.position.set(0, CHEST_Y, 0.124);
+agent.add(ring);
+const glowSprite = new THREE.Sprite(glowSpriteMat);
+glowSprite.position.set(0, CHEST_Y, 0.119);
+glowSprite.scale.set(0.22, 0.22, 1);
+agent.add(glowSprite);
+
+// Limbs
+const armGeo = makeCapsule(0.04, 0.22, 12);
+const legGeo = makeCapsule(0.045, 0.16, 12);
+const armEdgeGeo = new THREE.EdgesGeometry(armGeo);
+const legEdgeGeo = new THREE.EdgesGeometry(legGeo);
+
+const lArmPivot = new THREE.Group();
+lArmPivot.position.set(-0.18, ARM_PIVOT_Y, 0);
+const lArm = new THREE.Mesh(armGeo, bodyMat);
+lArm.position.set(0, -0.15, 0);
+lArmPivot.add(lArm);
+const lArmE = new THREE.LineSegments(armEdgeGeo, edgeMat);
+lArmE.position.set(0, -0.15, 0);
+lArmPivot.add(lArmE);
+agent.add(lArmPivot);
+
+const rArmPivot = new THREE.Group();
+rArmPivot.position.set(0.18, ARM_PIVOT_Y, 0);
+const rArm = new THREE.Mesh(armGeo, bodyMat);
+rArm.position.set(0, -0.15, 0);
+rArmPivot.add(rArm);
+const rArmE = new THREE.LineSegments(armEdgeGeo, edgeMat);
+rArmE.position.set(0, -0.15, 0);
+rArmPivot.add(rArmE);
+agent.add(rArmPivot);
+
+const lLegPivot = new THREE.Group();
+lLegPivot.position.set(-0.06, 0.92, 0);
+const lLeg = new THREE.Mesh(legGeo, bodyMat);
+lLeg.position.set(0, -0.12, 0);
+lLegPivot.add(lLeg);
+const lLegE = new THREE.LineSegments(legEdgeGeo, edgeMat);
+lLegE.position.set(0, -0.12, 0);
+lLegPivot.add(lLegE);
+agent.add(lLegPivot);
+
+const rLegPivot = new THREE.Group();
+rLegPivot.position.set(0.06, 0.92, 0);
+const rLeg = new THREE.Mesh(legGeo, bodyMat);
+rLeg.position.set(0, -0.12, 0);
+rLegPivot.add(rLeg);
+const rLegE = new THREE.LineSegments(legEdgeGeo, edgeMat);
+rLegE.position.set(0, -0.12, 0);
+rLegPivot.add(rLegE);
+agent.add(rLegPivot);
+
+// Head edge
+const headEdge = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.SphereGeometry(0.181, 16, 16)),
+  edgeMat
+);
+headEdge.position.copy(head.position);
+agent.add(headEdge);
+
+// Reference cube: half avatar height, so avatar reads as ~2 cubes tall
+const cubeSize = 0.5;
+const cubeGeo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+const cube = new THREE.Mesh(cubeGeo, new THREE.MeshStandardMaterial({
+  color: DARK_BODY,
+  emissive: AGENT_GREEN,
+  emissiveIntensity: 0.08,
+  transparent: true,
+  opacity: 0.5,
+  roughness: 0.3,
+  metalness: 0.7
+}));
+cube.position.set(0.9, cubeSize / 2, 0.3);
+scene.add(cube);
+const cubeEdge = new THREE.LineSegments(
+  new THREE.EdgesGeometry(cubeGeo),
+  new THREE.LineBasicMaterial({ color: AGENT_GREEN, transparent: true, opacity: 0.5 })
+);
+cubeEdge.position.copy(cube.position);
+scene.add(cubeEdge);
+
+// Tesla Node visual prototypes
+function makeTeslaNode({ x, z, heightCubes, complete, main }) {
+  const group = new THREE.Group();
+  const height = cubeSize * heightCubes;
+  const radius = main ? 0.16 : 0.14;
+  group.position.set(x, 0, z);
+
+  const activeCoreMat = new THREE.MeshStandardMaterial({
+    color: 0xf5ffff,
+    emissive: 0xf5ffff,
+    emissiveIntensity: 2.6,
+    roughness: 0.08,
+    metalness: 1,
+    transparent: true,
+    opacity: 0.9
+  });
+  const unfinishedMat = new THREE.MeshStandardMaterial({
+    color: 0xff0000,
+    emissive: 0xff0000,
+    emissiveIntensity: 0.9,
+    roughness: 0.2,
+    metalness: 0.7,
+    transparent: true,
+    opacity: 0.55
+  });
+  const ringNodeMat = new THREE.MeshStandardMaterial({
+    color: 0xf5ffff,
+    emissive: 0xf5ffff,
+    emissiveIntensity: 4.2,
+    roughness: 0.03,
+    metalness: 1,
+    transparent: true,
+    opacity: 1
+  });
+  const activeGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xf5ffff,
+    transparent: true,
+    // Soft body glow: visible, but weaker than the ring glow.
+    opacity: main ? 0.10 : 0.08,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const activeRingGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xf5ffff,
+    transparent: true,
+    // Stronger glow around rings so the energy feels like it radiates from them.
+    opacity: main ? 0.42 : 0.34,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const redGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xff0000,
+    transparent: true,
+    opacity: 0.34,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+
+  // No base/foot: Tesla Nodes should emerge directly from the grid.
+
+  // Core cylinder. Complete = white/blue-white, unfinished = dim red only.
+  const core = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, height, 32),
+    complete ? activeCoreMat : unfinishedMat
+  );
+  core.position.y = height / 2;
+  group.add(core);
+
+  // Structure-wide glow shell so the light feels like it radiates from the whole cylinder.
+  const coreGlow = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 1.45, radius * 1.45, height * 1.04, 32, 1, true),
+    complete ? activeGlowMat : redGlowMat
+  );
+  coreGlow.position.y = height / 2;
+  group.add(coreGlow);
+
+  // Extra soft vertical glow planes to fake bloom/blur around the full column.
+  for (let i = 0; i < 2; i++) {
+    const planeGlow = new THREE.Mesh(
+      new THREE.PlaneGeometry(radius * (complete ? 4.1 : 3.4), height * 1.08),
+      complete ? activeGlowMat : redGlowMat
+    );
+    planeGlow.position.y = height / 2;
+    planeGlow.rotation.y = i * Math.PI / 2;
+    group.add(planeGlow);
+  }
+
+  const coreEdge = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.CylinderGeometry(radius, radius, height, 24)),
+    new THREE.LineBasicMaterial({
+      color: complete ? 0xf5ffff : 0xff0000,
+      transparent: true,
+      opacity: complete ? 0.45 : 0.3
+    })
+  );
+  coreEdge.position.copy(core.position);
+  group.add(coreEdge);
+
+  if (complete) {
+    // Rings only appear when the Tesla Node is fully active.
+    const ringCount = main ? 4 : 3;
+    for (let i = 0; i < ringCount; i++) {
+      const y = (height * (i + 1)) / (ringCount + 1);
+      const torus = new THREE.Mesh(new THREE.TorusGeometry(radius * 2.35, 0.032, 12, 72), ringNodeMat);
+      torus.position.y = y;
+      torus.rotation.x = Math.PI / 2;
+      group.add(torus);
+
+      // Each active ring gets its own glow shell, instead of one central halo.
+      const ringGlow = new THREE.Mesh(
+        new THREE.TorusGeometry(radius * 2.45, 0.105, 12, 72),
+        activeRingGlowMat
+      );
+      ringGlow.position.y = y;
+      ringGlow.rotation.x = Math.PI / 2;
+      group.add(ringGlow);
+    }
+
+    const nodeLight = new THREE.PointLight(0xf5ffff, main ? 1.25 : 0.8, main ? 4.5 : 3.4);
+    nodeLight.position.y = height * 0.55;
+    group.add(nodeLight);
+  } else {
+    // Unfinished Tesla Node: red cylinder only, no rings, no recharge field.
+    // Red glow comes from the full cylinder shell, not a separate floating halo.
+    const redLight = new THREE.PointLight(0xff0000, 0.75, 2.8);
+    redLight.position.y = height * 0.5;
+    group.add(redLight);
+  }
+
+  // Tesla field visual: transparent floor disc plus soft vertical edge glow.
+  if (complete) {
+    const fieldRadius = main ? 1.15 : 0.9;
+    const fieldColor = 0x88ffff;
+    const fieldMat = new THREE.MeshBasicMaterial({
+      color: fieldColor,
+      transparent: true,
+      opacity: main ? 0.09 : 0.07,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const fieldDisc = new THREE.Mesh(new THREE.CircleGeometry(fieldRadius, 72), fieldMat);
+    fieldDisc.rotation.x = -Math.PI / 2;
+    fieldDisc.position.y = 0.012;
+    group.add(fieldDisc);
+
+    const fieldRingMat = new THREE.MeshBasicMaterial({
+      color: fieldColor,
+      transparent: true,
+      opacity: main ? 0.34 : 0.26,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const fieldRing = new THREE.Mesh(new THREE.TorusGeometry(fieldRadius, 0.018, 8, 96), fieldRingMat);
+    fieldRing.rotation.x = Math.PI / 2;
+    fieldRing.position.y = 0.025;
+    group.add(fieldRing);
+
+    // Subtle vertical shimmer wall at the edge of the charging area.
+    const shimmerMat = new THREE.MeshBasicMaterial({
+      color: fieldColor,
+      transparent: true,
+      opacity: 0.055,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const shimmer = new THREE.Mesh(
+      new THREE.CylinderGeometry(fieldRadius, fieldRadius, 0.75, 96, 1, true),
+      shimmerMat
+    );
+    shimmer.position.y = 0.38;
+    group.add(shimmer);
+
+    group.userData.field = { disc: fieldDisc, ring: fieldRing, shimmer };
+  }
+
+  scene.add(group);
+  return group;
+}
+
+// Main starting Tesla Node: unique, non-deletable, 3 cubes high, fully charged.
+makeTeslaNode({ x: -1.15, z: -0.2, heightCubes: 3, complete: true, main: true });
+
+// Unfinished player/agent-built Tesla Node: 2 cubes high, dim red cylinder, no rings yet.
+makeTeslaNode({ x: -1.85, z: 0.65, heightCubes: 2, complete: false, main: false });
+
+// Grid floor
+const grid1 = new THREE.GridHelper(20, 40, AGENT_GREEN, AGENT_GREEN);
+grid1.material.opacity = 0.06;
+grid1.material.transparent = true;
+scene.add(grid1);
+const grid2 = new THREE.GridHelper(20, 8, AGENT_GREEN, AGENT_GREEN);
+grid2.material.opacity = 0.12;
+grid2.material.transparent = true;
+scene.add(grid2);
+
+// Energy states
+const energyStates = [
+  {
+    name: 'full', label: 'Energy: full', reactor: WHITE_REACTOR,
+    centerBase: 0.8, centerPulse: 0.35, ringBase: 2.1, ringPulse: 0.9,
+    body: DARK_BODY, bodyGlow: AGENT_GREEN, bodyGlowIntensity: 0.12,
+    edge: AGENT_GREEN, edgeOpacity: 0.35,
+    eyes: AGENT_GREEN, eyeIntensity: 1.5,
+    active: true
+  },
+  {
+    name: 'medium', label: 'Energy: medium', reactor: ORANGE_REACTOR,
+    centerBase: 0.7, centerPulse: 0.3, ringBase: 1.8, ringPulse: 0.8,
+    body: DARK_BODY, bodyGlow: AGENT_GREEN, bodyGlowIntensity: 0.12,
+    edge: AGENT_GREEN, edgeOpacity: 0.35,
+    eyes: AGENT_GREEN, eyeIntensity: 1.35,
+    active: true
+  },
+  {
+    name: 'critical', label: 'Energy: critical low', reactor: RED_REACTOR,
+    centerBase: 0.75, centerPulse: 0.35, ringBase: 2.2, ringPulse: 1.1,
+    body: DARK_BODY, bodyGlow: AGENT_GREEN, bodyGlowIntensity: 0.12,
+    edge: AGENT_GREEN, edgeOpacity: 0.35,
+    eyes: AGENT_GREEN, eyeIntensity: 1.15,
+    active: true
+  },
+  {
+    name: 'shutdown', label: 'Energy: shutdown', reactor: RED_REACTOR,
+    centerBase: 1.0, centerPulse: 0, ringBase: 2.6, ringPulse: 0,
+    body: DARKER_SHUTDOWN_BODY, bodyGlow: SHUTDOWN_GREY, bodyGlowIntensity: 0.02,
+    edge: SHUTDOWN_GREY, edgeOpacity: 0.5,
+    eyes: SHUTDOWN_GREY, eyeIntensity: 0.02,
+    active: false
+  }
+];
+
+let stateIndex = 0;
+let currentState = energyStates[stateIndex];
+
+function applyEnergyState(state) {
+  currentState = state;
+  document.getElementById('stateLabel').textContent = state.label;
+
+  // Body only changes in shutdown. Active states keep the normal body appearance.
+  bodyMat.color.setHex(state.body);
+  bodyMat.emissive.setHex(state.bodyGlow);
+  bodyMat.emissiveIntensity = state.bodyGlowIntensity;
+
+  edgeMat.color.setHex(state.edge);
+  edgeMat.opacity = state.edgeOpacity;
+
+  eyeMat.color.setHex(state.eyes);
+  eyeMat.emissive.setHex(state.eyes);
+  eyeMat.emissiveIntensity = state.eyeIntensity;
+  ringMat.color.setHex(state.reactor);
+  ringMat.emissive.setHex(state.reactor);
+  glowSpriteMat.color.setHex(state.reactor);
+
+  point.color.setHex(state.reactor);
+  point.intensity = state.name === 'shutdown' ? 0.28 : 0.65;
+
+  if (!state.active) {
+    lArmPivot.rotation.x = 0;
+    rArmPivot.rotation.x = 0;
+    lLegPivot.rotation.x = 0;
+    rLegPivot.rotation.x = 0;
+    agent.position.y = 0;
+  }
+}
+
+document.getElementById('stateButton').addEventListener('click', () => {
+  stateIndex = (stateIndex + 1) % energyStates.length;
+  applyEnergyState(energyStates[stateIndex]);
+});
+applyEnergyState(currentState);
+
+document.getElementById('eyeButton').addEventListener('click', () => {
+  setEyeStyle(eyeStyleIndex + 1);
+});
+
+// Orbit controls
+let isDragging = false, prevX = 0, prevY = 0;
+let theta = Math.PI / 4, phi = Math.PI / 3.2, radius = 2.8;
+const target = new THREE.Vector3(0, 0.9, 0);
+let autoRotate = true;
+
+function updateCamera() {
+  phi = Math.max(0.3, Math.min(Math.PI / 2.1, phi));
+  radius = Math.max(1.2, Math.min(5, radius));
+  camera.position.set(
+    target.x + radius * Math.sin(phi) * Math.sin(theta),
+    target.y + radius * Math.cos(phi),
+    target.z + radius * Math.sin(phi) * Math.cos(theta)
+  );
+  camera.lookAt(target);
+}
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  isDragging = true;
+  autoRotate = false;
+  prevX = e.clientX;
+  prevY = e.clientY;
+});
+window.addEventListener('pointerup', () => { isDragging = false; });
+window.addEventListener('pointermove', e => {
+  if (!isDragging) return;
+  theta -= (e.clientX - prevX) * 0.008;
+  phi -= (e.clientY - prevY) * 0.008;
+  prevX = e.clientX;
+  prevY = e.clientY;
+  updateCamera();
+});
+renderer.domElement.addEventListener('wheel', e => {
+  radius += e.deltaY * 0.003;
+  updateCamera();
+});
+
+// Animate
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  // Walking and bobbing stop in shutdown.
+  if (currentState.active) {
+    const swing = Math.sin(t * 5) * 0.6;
+    lArmPivot.rotation.x = swing;
+    rArmPivot.rotation.x = -swing;
+    lLegPivot.rotation.x = -swing * 0.7;
+    rLegPivot.rotation.x = swing * 0.7;
+    agent.position.y = Math.sin(t * 10) * 0.015;
+  }
+
+  // Reactor pulse: ring is brighter and more glowy than the center.
+  const beatA = Math.pow(Math.max(0, Math.sin(t * 3.6)), 6);
+  const beatB = Math.pow(Math.max(0, Math.sin(t * 3.6 - 0.85)), 10) * 0.55;
+  const heartbeat = Math.min(1, beatA + beatB);
+  // Exaggerated reactor pulse: visible size + brightness + halo opacity changes.
+  ringMat.emissiveIntensity = currentState.ringBase + 0.45;
+  // Ring stays fixed. Only the soft glow pulses.
+  ring.scale.set(1, 1, 1);
+
+  // Larger and stronger blurred glow. No pulse in shutdown.
+  const glowScale = currentState.active ? 0.30 + heartbeat * 0.035 : 0.32;
+  glowSprite.scale.set(glowScale, glowScale, 1);
+  glowSpriteMat.opacity = currentState.active ? 0.52 + heartbeat * 0.26 : 0.78;
+
+  if (autoRotate) {
+    theta += 0.005;
+    updateCamera();
+  }
+
+  renderer.render(scene, camera);
+}
+
+updateCamera();
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

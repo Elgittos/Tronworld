@@ -1,0 +1,463 @@
+import * as THREE from 'three';
+import { Chunk } from '../world/types';
+import {
+  AvatarState,
+  BlockShape,
+  BLOCK_DEFINITIONS,
+  CameraMode,
+  PlacementCandidate,
+  PlacementTargetKind,
+  Vec3,
+} from '../world/types';
+import { WorldState } from '../world/worldState';
+import { AvatarVisual } from './avatarVisual';
+import { createBlockVisual, createGhostVisual, updateGhostVisual } from './blockVisual';
+import { disposeObject, applyRaycastMeta } from './geometry';
+import { createTeslaNodeVisual } from './teslaNodeVisual';
+
+export type FreeCameraState = {
+  position: THREE.Vector3;
+  yaw: number;
+  pitch: number;
+};
+
+export type BuildSelection = {
+  shape: BlockShape;
+  color: string;
+  rotation: 0 | 90 | 180 | 270;
+};
+
+export type RaycastTarget = {
+  kind: PlacementTargetKind | 'avatar';
+  id?: string;
+  point: Vec3;
+  normal: Vec3;
+};
+
+type VisualEntry = {
+  group: THREE.Group;
+  signature: string;
+};
+
+const GRID_COLOR = 0x00ff88;
+const BACKGROUND_COLOR = 0x020610;
+const CAMERA_HEIGHT = 1.62;
+
+export class WorldRenderer {
+  readonly renderer: THREE.WebGLRenderer;
+  readonly scene = new THREE.Scene();
+  readonly camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.05, 900);
+
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly cameraTarget = new THREE.Vector3();
+  private readonly chunkGroups = new Map<string, THREE.Group>();
+  private readonly blockGroups = new Map<string, THREE.Group>();
+  private readonly teslaGroups = new Map<string, VisualEntry>();
+  private readonly avatarGroups = new Map<string, AvatarVisual>();
+  private readonly ghostRoot = new THREE.Group();
+  private readonly groundPlane: THREE.Mesh;
+  private ghostShape?: BlockShape;
+
+  constructor(container: HTMLElement) {
+    this.scene.background = new THREE.Color(BACKGROUND_COLOR);
+    this.scene.fog = new THREE.Fog(BACKGROUND_COLOR, 45, 145);
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.25;
+    container.appendChild(this.renderer.domElement);
+
+    this.groundPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(10000, 10000),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    );
+    this.groundPlane.rotation.x = -Math.PI / 2;
+    applyRaycastMeta(this.groundPlane, 'floor', 'floor');
+    this.scene.add(this.groundPlane);
+
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.28));
+    const directional = new THREE.DirectionalLight(0xffffff, 0.68);
+    directional.position.set(8, 12, 5);
+    this.scene.add(directional);
+
+    const horizon = new THREE.PointLight(0x00ff88, 0.55, 30);
+    horizon.position.set(0, 7, 0);
+    this.scene.add(horizon);
+
+    this.ghostRoot.visible = false;
+    this.scene.add(this.ghostRoot);
+
+    window.addEventListener('resize', () => this.resize());
+  }
+
+  sync(world: WorldState, mode: CameraMode): void {
+    this.syncChunks(world.chunkManager.getVisibleChunks());
+    this.syncBlocks(world);
+    this.syncTeslaNodes(world);
+    this.syncAvatars(world, mode);
+  }
+
+  update(world: WorldState, mode: CameraMode, freeCamera: FreeCameraState, time: number): void {
+    this.sync(world, mode);
+    const selected = world.getSelectedAvatar();
+    this.updateCamera(mode, selected, freeCamera);
+
+    for (const [id, visual] of this.avatarGroups) {
+      const avatar = world.avatars.get(id);
+      if (avatar) {
+        visual.update(avatar, time, mode === 'avatar_pov' && selected?.id === id);
+      }
+    }
+
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  getPlacementCandidate(world: WorldState, selection: BuildSelection, avatarId?: string): PlacementCandidate | undefined {
+    const target = this.raycastCenter(world, avatarId);
+
+    if (!target || target.kind === 'avatar') {
+      return undefined;
+    }
+
+    const shapeSize = BLOCK_DEFINITIONS[selection.shape].size;
+    let position: Vec3;
+
+    if (target.kind === 'floor') {
+      position = {
+        x: Math.round(target.point.x),
+        y: selection.shape === 'tesla_node' ? shapeSize.y / 2 : shapeSize.y / 2,
+        z: Math.round(target.point.z),
+      };
+    } else if (target.kind === 'block' && target.id) {
+      const block = world.blocks.get(target.id);
+      if (!block) {
+        return undefined;
+      }
+
+      const targetSize = BLOCK_DEFINITIONS[block.shape].size;
+      const normal = this.axisNormal(target.normal);
+
+      if (Math.abs(normal.y) > 0.5) {
+        position = {
+          x: Math.round(target.point.x),
+          y:
+            normal.y > 0
+              ? block.position.y + targetSize.y / 2 + shapeSize.y / 2
+              : block.position.y - targetSize.y / 2 - shapeSize.y / 2,
+          z: Math.round(target.point.z),
+        };
+      } else if (Math.abs(normal.x) > 0.5) {
+        position = {
+          x: block.position.x + normal.x * (targetSize.x / 2 + shapeSize.x / 2),
+          y: block.position.y,
+          z: Math.round(target.point.z),
+        };
+      } else {
+        position = {
+          x: Math.round(target.point.x),
+          y: block.position.y,
+          z: block.position.z + normal.z * (targetSize.z / 2 + shapeSize.z / 2),
+        };
+      }
+    } else {
+      const normal = this.axisNormal(target.normal);
+      position = {
+        x: Math.round(target.point.x + normal.x * shapeSize.x * 0.5),
+        y: shapeSize.y / 2,
+        z: Math.round(target.point.z + normal.z * shapeSize.z * 0.5),
+      };
+    }
+
+    return {
+      shape: selection.shape,
+      position,
+      rotation: selection.rotation,
+      color: selection.color,
+      surfaceNormal: this.axisNormal(target.normal),
+      targetKind: target.kind,
+      targetId: target.id,
+    };
+  }
+
+  getLookTarget(world: WorldState, avatarId?: string): RaycastTarget | undefined {
+    return this.raycastCenter(world, avatarId);
+  }
+
+  updateGhost(candidate: PlacementCandidate | undefined, valid: boolean): void {
+    if (!candidate) {
+      this.ghostRoot.visible = false;
+      return;
+    }
+
+    if (this.ghostShape !== candidate.shape) {
+      this.ghostRoot.clear();
+      const ghost = createGhostVisual(candidate.shape);
+      this.ghostRoot.add(ghost);
+      this.ghostShape = candidate.shape;
+    }
+
+    this.ghostRoot.visible = true;
+    this.ghostRoot.position.set(candidate.position.x, candidate.shape === 'tesla_node' ? 0 : candidate.position.y, candidate.position.z);
+    this.ghostRoot.rotation.y = THREE.MathUtils.degToRad(candidate.rotation);
+    updateGhostVisual(this.ghostRoot, valid);
+  }
+
+  private syncChunks(chunks: Chunk[]): void {
+    const visible = new Set<string>(chunks.map((chunk) => chunk.key));
+
+    for (const [key, group] of this.chunkGroups) {
+      if (!visible.has(key)) {
+        this.scene.remove(group);
+        disposeObject(group);
+        this.chunkGroups.delete(key);
+      }
+    }
+
+    for (const chunk of chunks) {
+      if (this.chunkGroups.has(chunk.key)) {
+        continue;
+      }
+
+      const group = this.createChunkGroup(chunk);
+      this.chunkGroups.set(chunk.key, group);
+      this.scene.add(group);
+    }
+  }
+
+  private syncBlocks(world: WorldState): void {
+    for (const [id, group] of this.blockGroups) {
+      if (!world.blocks.has(id)) {
+        this.scene.remove(group);
+        disposeObject(group);
+        this.blockGroups.delete(id);
+      }
+    }
+
+    for (const block of world.blocks.values()) {
+      if (this.blockGroups.has(block.id)) {
+        continue;
+      }
+
+      const group = createBlockVisual(block);
+      this.blockGroups.set(block.id, group);
+      this.scene.add(group);
+    }
+  }
+
+  private syncTeslaNodes(world: WorldState): void {
+    for (const [id, entry] of this.teslaGroups) {
+      if (!world.teslaNodes.has(id)) {
+        this.scene.remove(entry.group);
+        disposeObject(entry.group);
+        this.teslaGroups.delete(id);
+      }
+    }
+
+    for (const node of world.teslaNodes.values()) {
+      const showField = node.starting || node.interference;
+      const signature = `${node.active}:${node.interference}:${node.starting}:${Math.floor(node.contribution)}:${showField}`;
+      const existing = this.teslaGroups.get(node.id);
+
+      if (existing?.signature === signature) {
+        continue;
+      }
+
+      if (existing) {
+        this.scene.remove(existing.group);
+        disposeObject(existing.group);
+      }
+
+      const group = createTeslaNodeVisual(node, showField);
+      this.scene.add(group);
+      this.teslaGroups.set(node.id, { group, signature });
+    }
+  }
+
+  private syncAvatars(world: WorldState, mode: CameraMode): void {
+    const selected = world.getSelectedAvatar();
+
+    for (const [id, visual] of this.avatarGroups) {
+      if (!world.avatars.has(id)) {
+        this.scene.remove(visual.group);
+        disposeObject(visual.group);
+        this.avatarGroups.delete(id);
+      }
+    }
+
+    for (const avatar of world.avatars.values()) {
+      let visual = this.avatarGroups.get(avatar.id);
+
+      if (!visual) {
+        visual = new AvatarVisual(avatar);
+        this.avatarGroups.set(avatar.id, visual);
+        this.scene.add(visual.group);
+      }
+
+      visual.group.visible = !(mode === 'avatar_pov' && selected?.id === avatar.id);
+    }
+  }
+
+  private createChunkGroup(chunk: Chunk): THREE.Group {
+    const group = new THREE.Group();
+    const size = 16;
+    const centerX = chunk.cx * size + size / 2;
+    const centerZ = chunk.cz * size + size / 2;
+
+    const base = new THREE.Mesh(
+      new THREE.PlaneGeometry(size, size),
+      new THREE.MeshBasicMaterial({
+        color: 0x030914,
+        transparent: true,
+        opacity: 0.82,
+        side: THREE.DoubleSide,
+      }),
+    );
+    base.rotation.x = -Math.PI / 2;
+    base.position.set(centerX, -0.012, centerZ);
+
+    const fineGrid = new THREE.GridHelper(size, size, GRID_COLOR, GRID_COLOR);
+    fineGrid.position.set(centerX, 0.002, centerZ);
+    const fineMat = fineGrid.material as THREE.Material;
+    fineMat.transparent = true;
+    fineMat.opacity = 0.055;
+
+    const majorGrid = new THREE.GridHelper(size, 4, 0x88ffff, GRID_COLOR);
+    majorGrid.position.set(centerX, 0.004, centerZ);
+    const majorMat = majorGrid.material as THREE.Material;
+    majorMat.transparent = true;
+    majorMat.opacity = 0.14;
+
+    group.add(base, fineGrid, majorGrid);
+    return group;
+  }
+
+  private updateCamera(mode: CameraMode, avatar: AvatarState | undefined, freeCamera: FreeCameraState): void {
+    if (mode === 'free_camera' || !avatar) {
+      const direction = new THREE.Vector3(
+        Math.sin(freeCamera.yaw) * Math.cos(freeCamera.pitch),
+        Math.sin(freeCamera.pitch),
+        Math.cos(freeCamera.yaw) * Math.cos(freeCamera.pitch),
+      );
+      this.camera.position.copy(freeCamera.position);
+      this.camera.lookAt(freeCamera.position.clone().add(direction));
+      return;
+    }
+
+    const avatarBase = new THREE.Vector3(avatar.position.x, avatar.position.y, avatar.position.z);
+    const forward = new THREE.Vector3(Math.sin(avatar.yaw), 0, Math.cos(avatar.yaw));
+
+    if (mode === 'avatar_pov') {
+      const eye = avatarBase.clone().add(new THREE.Vector3(0, CAMERA_HEIGHT, 0));
+      const gaze = new THREE.Vector3(
+        Math.sin(avatar.yaw) * Math.cos(avatar.pitch),
+        Math.sin(avatar.pitch),
+        Math.cos(avatar.yaw) * Math.cos(avatar.pitch),
+      );
+      this.camera.position.copy(eye);
+      this.camera.lookAt(eye.clone().add(gaze));
+      return;
+    }
+
+    const desired = avatarBase.clone().add(new THREE.Vector3(0, 2.45, 0)).sub(forward.multiplyScalar(5.4));
+    this.camera.position.lerp(desired, 0.16);
+    this.cameraTarget.lerp(avatarBase.clone().add(new THREE.Vector3(0, 1.16, 0)), 0.2);
+    this.camera.lookAt(this.cameraTarget);
+  }
+
+  private raycastCenter(world: WorldState, avatarId?: string): RaycastTarget | undefined {
+    this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+    this.raycaster.far = 12;
+    const objects = this.getRaycastObjects();
+    const hits = this.raycaster.intersectObjects(objects, true);
+
+    for (const hit of hits) {
+      const meta = this.getRaycastMeta(hit.object);
+      if (!meta) {
+        continue;
+      }
+
+      if (meta.kind === 'avatar' && meta.id === avatarId) {
+        continue;
+      }
+
+      if (meta.kind === 'floor') {
+        return {
+          kind: 'floor',
+          id: undefined,
+          point: { x: hit.point.x, y: 0, z: hit.point.z },
+          normal: { x: 0, y: 1, z: 0 },
+        };
+      }
+
+      const normal = this.hitNormal(hit);
+      if (meta.kind === 'block' || meta.kind === 'tesla_node' || meta.kind === 'avatar') {
+        return {
+          kind: meta.kind,
+          id: meta.id,
+          point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
+          normal,
+        };
+      }
+    }
+
+    const selected = avatarId ? world.avatars.get(avatarId) : undefined;
+    if (!selected) {
+      return undefined;
+    }
+
+    return undefined;
+  }
+
+  private getRaycastObjects(): THREE.Object3D[] {
+    return [
+      this.groundPlane,
+      ...this.blockGroups.values(),
+      ...[...this.teslaGroups.values()].map((entry) => entry.group),
+      ...[...this.avatarGroups.values()].map((entry) => entry.group),
+    ];
+  }
+
+  private getRaycastMeta(object: THREE.Object3D): { kind: RaycastTarget['kind']; id?: string } | undefined {
+    let current: THREE.Object3D | null = object;
+    while (current) {
+      const kind = current.userData.raycastKind as RaycastTarget['kind'] | undefined;
+      if (kind) {
+        return { kind, id: current.userData.raycastId as string | undefined };
+      }
+      current = current.parent;
+    }
+    return undefined;
+  }
+
+  private hitNormal(hit: THREE.Intersection): Vec3 {
+    if (!hit.face) {
+      return { x: 0, y: 1, z: 0 };
+    }
+
+    const normal = hit.face.normal.clone();
+    normal.transformDirection(hit.object.matrixWorld);
+    return this.axisNormal({ x: normal.x, y: normal.y, z: normal.z });
+  }
+
+  private axisNormal(normal: Vec3): Vec3 {
+    const absX = Math.abs(normal.x);
+    const absY = Math.abs(normal.y);
+    const absZ = Math.abs(normal.z);
+
+    if (absY >= absX && absY >= absZ) {
+      return { x: 0, y: Math.sign(normal.y) || 1, z: 0 };
+    }
+    if (absX >= absZ) {
+      return { x: Math.sign(normal.x) || 1, y: 0, z: 0 };
+    }
+    return { x: 0, y: 0, z: Math.sign(normal.z) || 1 };
+  }
+
+  private resize(): void {
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+}

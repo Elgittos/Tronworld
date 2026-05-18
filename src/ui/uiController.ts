@@ -1,0 +1,329 @@
+import { ActionResult } from '../actions/actions';
+import { BlockShape, BLOCK_DEFINITIONS, CameraMode, PersonalityWeights, WORLD_RULES } from '../world/types';
+import { WorldState } from '../world/worldState';
+
+type UICallbacks = {
+  onCreateAvatar: (options: { name: string; color: string; personality: PersonalityWeights }) => void;
+  onCameraModeChange: (mode: CameraMode) => void;
+};
+
+const SHAPES: BlockShape[] = ['cube', 'half_cube', 'ramp', 'tile', 'pillar', 'tesla_node'];
+const COLORS = ['#00ff88', '#88ffff', '#f5fff7', '#ff8a1f', '#ff2d55', '#9b7cff'];
+
+export class UIController {
+  readonly root: HTMLElement;
+  cameraMode: CameraMode = 'third_person';
+  buildOpen = false;
+  selectedShape: BlockShape = 'cube';
+  selectedColor = COLORS[0];
+  rotation: 0 | 90 | 180 | 270 = 0;
+  freeCameraSpeed = 10;
+  teslaContribution = 0;
+  transferCap = 0;
+
+  private readonly shapeButtons = new Map<BlockShape, HTMLButtonElement>();
+  private readonly modeButtons = new Map<CameraMode, HTMLButtonElement>();
+  private readonly buildPanel: HTMLElement;
+  private readonly energyFill: HTMLElement;
+  private readonly energyValue: HTMLElement;
+  private readonly statusLine: HTMLElement;
+  private readonly fieldLine: HTMLElement;
+  private readonly contextLine: HTMLElement;
+  private readonly personalityLine: HTMLElement;
+  private readonly freeSpeedWrap: HTMLElement;
+  private readonly contributionInput: HTMLInputElement;
+  private readonly transferInput: HTMLInputElement;
+
+  constructor(private readonly callbacks: UICallbacks) {
+    const app = document.querySelector<HTMLDivElement>('#app');
+    if (!app) {
+      throw new Error('Missing #app root.');
+    }
+
+    this.root = document.createElement('div');
+    this.root.className = 'ui-root';
+    app.appendChild(this.root);
+
+    this.root.innerHTML = `
+      <div class="crosshair"></div>
+      <section class="avatar-create" data-create-panel>
+        <div class="create-shell">
+          <p class="eyebrow">Tron World MVP</p>
+          <h1>Create Avatar</h1>
+          <div class="field-row">
+            <label for="avatarName">Name</label>
+            <input id="avatarName" value="Grid Runner" maxlength="24" />
+          </div>
+          <div class="field-row">
+            <label>Color</label>
+            <div class="swatches" data-create-colors></div>
+          </div>
+          <div class="personality-grid" data-personality></div>
+          <button class="primary-action" data-create-button>Enter World</button>
+        </div>
+      </section>
+      <section class="hud">
+        <div class="hud-main">
+          <div class="meter">
+            <div class="meter-label">
+              <span>Energy</span>
+              <span data-energy-value>--</span>
+            </div>
+            <div class="meter-track"><div class="meter-fill" data-energy-fill></div></div>
+          </div>
+          <div class="mode-strip">
+            <button data-mode="third_person">Third</button>
+            <button data-mode="avatar_pov">POV</button>
+            <button data-mode="free_camera">Free</button>
+          </div>
+          <div class="free-speed" data-free-speed-wrap>
+            <label for="freeSpeed">Free speed</label>
+            <input id="freeSpeed" type="range" min="3" max="28" step="1" value="10" />
+            <span data-free-speed-value>10</span>
+          </div>
+        </div>
+        <div class="hud-lines">
+          <span data-field-line>Field: --</span>
+          <span data-personality-line>Personality: --</span>
+        </div>
+      </section>
+      <section class="build-panel" data-build-panel>
+        <div class="panel-header">
+          <span>Build</span>
+          <button data-rotate>Rotate 0°</button>
+        </div>
+        <div class="shape-grid" data-shapes></div>
+        <div class="panel-subrow">
+          <span>Color</span>
+          <div class="swatches" data-build-colors></div>
+        </div>
+        <div class="tesla-row" data-tesla-row>
+          <label for="teslaContribution">Tesla contribution</label>
+          <input id="teslaContribution" type="number" min="0" max="100" step="1" placeholder="Amount" />
+        </div>
+        <div class="tesla-row">
+          <label for="transferCap">Transfer cap</label>
+          <input id="transferCap" type="number" min="0" max="100" step="1" placeholder="Amount" />
+        </div>
+      </section>
+      <section class="status-stack">
+        <div data-context-line></div>
+        <div data-status-line>Create an avatar to begin.</div>
+      </section>
+    `;
+
+    this.buildPanel = this.get('[data-build-panel]');
+    this.energyFill = this.get('[data-energy-fill]');
+    this.energyValue = this.get('[data-energy-value]');
+    this.statusLine = this.get('[data-status-line]');
+    this.fieldLine = this.get('[data-field-line]');
+    this.contextLine = this.get('[data-context-line]');
+    this.personalityLine = this.get('[data-personality-line]');
+    this.freeSpeedWrap = this.get('[data-free-speed-wrap]');
+    this.contributionInput = this.get<HTMLInputElement>('#teslaContribution');
+    this.transferInput = this.get<HTMLInputElement>('#transferCap');
+
+    this.bindCreatePanel();
+    this.bindHud();
+    this.bindBuildPanel();
+    this.refreshBuildPanel();
+    this.setCameraMode(this.cameraMode);
+  }
+
+  toggleBuildPanel(): void {
+    this.buildOpen = !this.buildOpen;
+    this.refreshBuildPanel();
+  }
+
+  setBuildOpen(open: boolean): void {
+    this.buildOpen = open;
+    this.refreshBuildPanel();
+  }
+
+  setCameraMode(mode: CameraMode): void {
+    this.cameraMode = mode;
+    this.modeButtons.forEach((button, key) => button.classList.toggle('active', key === mode));
+    this.freeSpeedWrap.classList.toggle('visible', mode === 'free_camera');
+    this.callbacks.onCameraModeChange(mode);
+  }
+
+  setStatus(message: string): void {
+    this.statusLine.textContent = message;
+  }
+
+  update(world: WorldState, placement?: ActionResult, context = ''): void {
+    const avatar = world.getSelectedAvatar();
+
+    if (!avatar) {
+      this.energyValue.textContent = '--';
+      this.energyFill.style.width = '0%';
+      this.fieldLine.textContent = 'Field: --';
+      this.personalityLine.textContent = 'Personality: --';
+      this.contextLine.textContent = context;
+      this.statusLine.textContent = world.lastMessage;
+      return;
+    }
+
+    const energy = Math.max(0, avatar.energy);
+    this.energyValue.textContent = `${energy.toFixed(0)} / ${WORLD_RULES.maxEnergy}`;
+    this.energyFill.style.width = `${energy}%`;
+    this.energyFill.classList.toggle('medium', energy <= 65 && energy > 25);
+    this.energyFill.classList.toggle('critical', energy <= 25);
+    this.energyFill.classList.toggle('shutdown', avatar.shutdown);
+
+    const field = world.getTeslaFieldEffectAt(avatar.position);
+    if (avatar.shutdown) {
+      this.fieldLine.textContent = 'Field: shutdown';
+    } else if (field > 0) {
+      this.fieldLine.textContent = 'Field: recharge +3/s';
+    } else if (field < 0) {
+      this.fieldLine.textContent = 'Field: interference -3/s';
+    } else {
+      this.fieldLine.textContent = 'Field: grid drain';
+    }
+
+    const personality = Object.entries(avatar.personality)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([name]) => name)
+      .join(' / ');
+    this.personalityLine.textContent = `Personality: ${personality}`;
+
+    this.contextLine.textContent = context || (placement ? placement.message : '');
+    this.statusLine.textContent = world.lastMessage;
+    this.refreshShapeCosts(energy);
+  }
+
+  private bindCreatePanel(): void {
+    const createPanel = this.get<HTMLElement>('[data-create-panel]');
+    const colorWrap = this.get<HTMLElement>('[data-create-colors]');
+    const personalityWrap = this.get<HTMLElement>('[data-personality]');
+    const nameInput = this.get<HTMLInputElement>('#avatarName');
+    let selectedCreateColor = COLORS[0];
+
+    COLORS.forEach((color) => {
+      const button = document.createElement('button');
+      button.className = 'swatch';
+      button.style.setProperty('--swatch', color);
+      button.classList.toggle('active', color === selectedCreateColor);
+      button.addEventListener('click', () => {
+        selectedCreateColor = color;
+        colorWrap.querySelectorAll('button').forEach((entry) => entry.classList.remove('active'));
+        button.classList.add('active');
+      });
+      colorWrap.appendChild(button);
+    });
+
+    const sliders: Record<keyof PersonalityWeights, HTMLInputElement> = {
+      focus: this.createPersonalitySlider(personalityWrap, 'Focus', 25),
+      connection: this.createPersonalitySlider(personalityWrap, 'Connection', 20),
+      curiosity: this.createPersonalitySlider(personalityWrap, 'Curiosity', 35),
+      purpose: this.createPersonalitySlider(personalityWrap, 'Purpose', 20),
+    };
+
+    this.get<HTMLButtonElement>('[data-create-button]').addEventListener('click', () => {
+      this.callbacks.onCreateAvatar({
+        name: nameInput.value,
+        color: selectedCreateColor,
+        personality: {
+          focus: Number(sliders.focus.value),
+          connection: Number(sliders.connection.value),
+          curiosity: Number(sliders.curiosity.value),
+          purpose: Number(sliders.purpose.value),
+        },
+      });
+      createPanel.classList.add('hidden');
+    });
+  }
+
+  private createPersonalitySlider(parent: HTMLElement, label: string, value: number): HTMLInputElement {
+    const row = document.createElement('label');
+    row.className = 'personality-row';
+    row.innerHTML = `<span>${label}</span><input type="range" min="0" max="100" step="1" value="${value}" />`;
+    parent.appendChild(row);
+    return row.querySelector('input') as HTMLInputElement;
+  }
+
+  private bindHud(): void {
+    this.root.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((button) => {
+      const mode = button.dataset.mode as CameraMode;
+      this.modeButtons.set(mode, button);
+      button.addEventListener('click', () => this.setCameraMode(mode));
+    });
+
+    const freeSpeed = this.get<HTMLInputElement>('#freeSpeed');
+    const value = this.get<HTMLElement>('[data-free-speed-value]');
+    freeSpeed.addEventListener('input', () => {
+      this.freeCameraSpeed = Number(freeSpeed.value);
+      value.textContent = freeSpeed.value;
+    });
+  }
+
+  private bindBuildPanel(): void {
+    const shapeWrap = this.get<HTMLElement>('[data-shapes]');
+    const colorWrap = this.get<HTMLElement>('[data-build-colors]');
+
+    SHAPES.forEach((shape) => {
+      const definition = BLOCK_DEFINITIONS[shape];
+      const button = document.createElement('button');
+      button.className = 'shape-card';
+      button.innerHTML = `<span>${definition.label}</span><strong data-cost>${shape === 'tesla_node' ? WORLD_RULES.teslaNodeTargetEnergy : definition.energyCost}</strong>`;
+      button.addEventListener('click', () => {
+        this.selectedShape = shape;
+        this.refreshBuildPanel();
+      });
+      shapeWrap.appendChild(button);
+      this.shapeButtons.set(shape, button);
+    });
+
+    COLORS.forEach((color) => {
+      const button = document.createElement('button');
+      button.className = 'swatch';
+      button.style.setProperty('--swatch', color);
+      button.classList.toggle('active', color === this.selectedColor);
+      button.addEventListener('click', () => {
+        this.selectedColor = color;
+        colorWrap.querySelectorAll('button').forEach((entry) => entry.classList.remove('active'));
+        button.classList.add('active');
+      });
+      colorWrap.appendChild(button);
+    });
+
+    this.get<HTMLButtonElement>('[data-rotate]').addEventListener('click', (event) => {
+      this.rotation = ((this.rotation + 90) % 360) as 0 | 90 | 180 | 270;
+      (event.currentTarget as HTMLButtonElement).textContent = `Rotate ${this.rotation}°`;
+    });
+
+    this.contributionInput.addEventListener('input', () => {
+      this.teslaContribution = Math.max(0, Number(this.contributionInput.value) || 0);
+    });
+    this.transferInput.addEventListener('input', () => {
+      this.transferCap = Math.max(0, Number(this.transferInput.value) || 0);
+    });
+  }
+
+  private refreshBuildPanel(): void {
+    this.buildPanel.classList.toggle('open', this.buildOpen);
+    this.shapeButtons.forEach((button, shape) => {
+      button.classList.toggle('active', shape === this.selectedShape);
+    });
+    this.get<HTMLElement>('[data-tesla-row]').classList.toggle('visible', this.selectedShape === 'tesla_node');
+  }
+
+  private refreshShapeCosts(energy: number): void {
+    this.shapeButtons.forEach((button, shape) => {
+      const cost = shape === 'tesla_node' ? WORLD_RULES.teslaNodeTargetEnergy : BLOCK_DEFINITIONS[shape].energyCost;
+      const costNode = button.querySelector('[data-cost]');
+      costNode?.classList.toggle('affordable', energy >= cost);
+      costNode?.classList.toggle('expensive', energy < cost);
+    });
+  }
+
+  private get<T extends HTMLElement = HTMLElement>(selector: string): T {
+    const element = this.root.querySelector<T>(selector);
+    if (!element) {
+      throw new Error(`Missing UI element: ${selector}`);
+    }
+    return element;
+  }
+}

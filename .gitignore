@@ -37,3 +37,8 @@ Thumbs.db
 .turbo/
 __pycache__/
 *.py[cod]
+
+# Local smoke-test artifacts
+smoke-*.png
+playwright-report/
+test-results/
