@@ -117,7 +117,7 @@ export class InputController {
       direction.normalize().multiplyScalar(WORLD_RULES.avatarWalkSpeed);
     }
 
-    this.thirdPersonCamera.steerFollow = this.rightMouseHeld && moving;
+    this.thirdPersonCamera.steerFollow = this.rightMouseHeld;
 
     const jump = this.jumpQueued;
     this.jumpQueued = false;
@@ -130,6 +130,12 @@ export class InputController {
   }
 
   updateHeldCamera(dt: number, recenterBehindAvatar: boolean): void {
+    if (this.rightMouseHeld) {
+      this.thirdPersonCamera.orbitYawOffset = 0;
+      this.thirdPersonCamera.orbitPitchOffset = THREE.MathUtils.damp(this.thirdPersonCamera.orbitPitchOffset, 0, 18, dt);
+      return;
+    }
+
     if (recenterBehindAvatar && !this.leftMouseHeld) {
       const followSpeed = this.thirdPersonCamera.steerFollow ? 18 : 7;
       this.thirdPersonCamera.orbitYawOffset = THREE.MathUtils.damp(this.thirdPersonCamera.orbitYawOffset, 0, followSpeed, dt);
@@ -192,6 +198,8 @@ export class InputController {
         this.leftMouseDownAt = performance.now();
       } else if (event.button === 2) {
         this.rightMouseHeld = true;
+        this.thirdPersonCamera.steerFollow = true;
+        this.thirdPersonCamera.orbitYawOffset = 0;
         this.rightMouseDragged = false;
         this.rightMouseDownAt = performance.now();
       }
@@ -215,6 +223,7 @@ export class InputController {
       if (event.button === 2) {
         const wasClick = !this.rightMouseDragged && performance.now() - this.rightMouseDownAt < 250;
         this.rightMouseHeld = false;
+        this.thirdPersonCamera.steerFollow = false;
         if (wasClick) {
           this.callbacks.onSecondary();
         }
