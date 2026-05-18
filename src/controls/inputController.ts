@@ -109,25 +109,26 @@ export class InputController {
     }
 
     const speed = this.callbacks.getFreeSpeed();
+    const turnSpeed = 2.55;
+    if (this.keys.has('keya')) {
+      this.freeCamera.yaw += turnSpeed * dt;
+    }
+    if (this.keys.has('keyd')) {
+      this.freeCamera.yaw -= turnSpeed * dt;
+    }
+
     const forward = new THREE.Vector3(
       Math.sin(this.freeCamera.yaw) * Math.cos(this.freeCamera.pitch),
       Math.sin(this.freeCamera.pitch),
       Math.cos(this.freeCamera.yaw) * Math.cos(this.freeCamera.pitch),
     ).normalize();
-    const right = new THREE.Vector3(Math.cos(this.freeCamera.yaw), 0, -Math.sin(this.freeCamera.yaw)).normalize();
     const direction = new THREE.Vector3();
 
-    if (this.keys.has('keyw')) {
+    if (this.keys.has('keyw') || this.rightMouseHeld) {
       direction.add(forward);
     }
     if (this.keys.has('keys')) {
       direction.sub(forward);
-    }
-    if (this.keys.has('keyd')) {
-      direction.add(right);
-    }
-    if (this.keys.has('keya')) {
-      direction.sub(right);
     }
     if (this.keys.has('space')) {
       direction.y += 1;
