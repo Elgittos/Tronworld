@@ -235,28 +235,6 @@ export class WorldRenderer {
     return this.raycastAt(world, avatarId, new THREE.Vector2(0, 0));
   }
 
-  getFloorPoint(pointerNdc: THREE.Vector2): Vec3 | undefined {
-    this.raycaster.setFromCamera(pointerNdc, this.camera);
-    const point = new THREE.Vector3();
-    const hit = this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), point);
-
-    if (hit) {
-      return { x: point.x, y: 0, z: point.z };
-    }
-
-    const flatDirection = new THREE.Vector3(this.raycaster.ray.direction.x, 0, this.raycaster.ray.direction.z);
-    if (flatDirection.lengthSq() < 0.0001) {
-      return undefined;
-    }
-
-    flatDirection.normalize();
-    return {
-      x: this.camera.position.x + flatDirection.x * 50,
-      y: 0,
-      z: this.camera.position.z + flatDirection.z * 50,
-    };
-  }
-
   updateGhost(candidate: PlacementCandidate | undefined, valid: boolean): void {
     if (!candidate) {
       this.ghostRoot.visible = false;

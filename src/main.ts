@@ -46,7 +46,6 @@ controls = new InputController(renderer.renderer.domElement, {
   getFreeSpeed: () => ui.freeCameraSpeed,
   getOrbitHorizontalInverted: () => ui.orbitHorizontalInverted,
   getOrbitVerticalInverted: () => ui.orbitVerticalInverted,
-  getPointerWorldPoint: () => renderer.getFloorPoint(controls.pointerNdc),
   onToggleBuild: () => ui.toggleBuildPanel(),
   onPrimary: () => handlePrimaryAction(),
   onSecondary: () => handleSecondaryAction(),

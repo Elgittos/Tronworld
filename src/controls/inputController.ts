@@ -8,7 +8,6 @@ type InputCallbacks = {
   getFreeSpeed: () => number;
   getOrbitHorizontalInverted: () => boolean;
   getOrbitVerticalInverted: () => boolean;
-  getPointerWorldPoint: () => Vec3 | undefined;
   onToggleBuild: () => void;
   onPrimary: () => void;
   onSecondary: () => void;
@@ -95,24 +94,12 @@ export class InputController {
       return { velocity: { x: 0, y: 0, z: 0 }, jump: false, moving: false };
     }
 
-    const rightMouseSteering = this.rightMouseHeld;
     const turnSpeed = 2.55;
-    if (!rightMouseSteering && this.keys.has('keya')) {
+    if (this.keys.has('keya')) {
       avatar.yaw += turnSpeed * dt;
     }
-    if (!rightMouseSteering && this.keys.has('keyd')) {
+    if (this.keys.has('keyd')) {
       avatar.yaw -= turnSpeed * dt;
-    }
-
-    if (rightMouseSteering) {
-      const target = this.callbacks.getPointerWorldPoint();
-      if (target) {
-        const dx = target.x - avatar.position.x;
-        const dz = target.z - avatar.position.z;
-        if (dx * dx + dz * dz > 0.04) {
-          avatar.yaw = Math.atan2(dx, dz);
-        }
-      }
     }
 
     const forward = new THREE.Vector3(Math.sin(avatar.yaw), 0, Math.cos(avatar.yaw));
@@ -145,7 +132,6 @@ export class InputController {
   updateHeldCamera(dt: number, recenterBehindAvatar: boolean): void {
     if (this.rightMouseHeld) {
       this.thirdPersonCamera.orbitYawOffset = 0;
-      this.thirdPersonCamera.orbitPitchOffset = THREE.MathUtils.damp(this.thirdPersonCamera.orbitPitchOffset, 0, 18, dt);
       return;
     }
 
@@ -215,6 +201,7 @@ export class InputController {
         this.thirdPersonCamera.orbitYawOffset = 0;
         this.rightMouseDragged = false;
         this.rightMouseDownAt = performance.now();
+        void this.canvas.requestPointerLock();
       }
     });
 
@@ -235,8 +222,7 @@ export class InputController {
 
       if (event.button === 2) {
         const wasClick = !this.rightMouseDragged && performance.now() - this.rightMouseDownAt < 250;
-        this.rightMouseHeld = false;
-        this.thirdPersonCamera.steerFollow = false;
+        this.endRightMouseHold();
         if (wasClick) {
           this.callbacks.onSecondary();
         }
@@ -245,8 +231,7 @@ export class InputController {
 
     this.canvas.addEventListener('pointercancel', () => {
       this.leftMouseHeld = false;
-      this.rightMouseHeld = false;
-      this.thirdPersonCamera.steerFollow = false;
+      this.endRightMouseHold();
     });
 
     this.canvas.addEventListener('pointermove', (event) => {
@@ -255,7 +240,6 @@ export class InputController {
         return;
       }
 
-      const mode = this.callbacks.getMode();
       const sensitivity = 0.004;
       const movedFarEnough = Math.abs(event.movementX) + Math.abs(event.movementY) > 2;
 
@@ -266,6 +250,14 @@ export class InputController {
         this.rightMouseDragged = true;
       }
 
+      if (this.rightMouseHeld) {
+        if (document.pointerLockElement !== this.canvas) {
+          this.applyRightMouseLook(event.movementX, event.movementY, sensitivity);
+        }
+        return;
+      }
+
+      const mode = this.callbacks.getMode();
       if (mode === 'free_camera') {
         if (this.rightMouseHeld) {
           this.freeCamera.yaw -= event.movementX * sensitivity;
@@ -279,9 +271,7 @@ export class InputController {
         return;
       }
 
-      if (this.rightMouseHeld && !avatar.shutdown) {
-        return;
-      } else if (this.leftMouseHeld && mode === 'third_person') {
+      if (this.leftMouseHeld && mode === 'third_person') {
         const horizontalDirection = this.callbacks.getOrbitHorizontalInverted() ? 1 : -1;
         const verticalDirection = this.callbacks.getOrbitVerticalInverted() ? 1 : -1;
         this.thirdPersonCamera.orbitYawOffset += event.movementX * sensitivity * horizontalDirection;
@@ -290,6 +280,31 @@ export class InputController {
           -0.85,
           0.85,
         );
+      }
+    });
+
+    document.addEventListener('mousemove', (event) => {
+      if (!this.rightMouseHeld || document.pointerLockElement !== this.canvas) {
+        return;
+      }
+
+      const movedFarEnough = Math.abs(event.movementX) + Math.abs(event.movementY) > 2;
+      if (movedFarEnough) {
+        this.rightMouseDragged = true;
+      }
+
+      this.applyRightMouseLook(event.movementX, event.movementY, 0.004);
+    });
+
+    document.addEventListener('mouseup', (event) => {
+      if (event.button === 2 && this.rightMouseHeld) {
+        this.endRightMouseHold();
+      }
+    });
+
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement !== this.canvas && this.rightMouseHeld) {
+        this.endRightMouseHold(false);
       }
     });
 
@@ -328,5 +343,40 @@ export class InputController {
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
     this.pointerNdc.set(THREE.MathUtils.clamp(x, 0, 1) * 2 - 1, -(THREE.MathUtils.clamp(y, 0, 1) * 2 - 1));
+  }
+
+  private applyRightMouseLook(movementX: number, movementY: number, sensitivity: number): void {
+    const mode = this.callbacks.getMode();
+
+    if (mode === 'free_camera') {
+      this.freeCamera.yaw -= movementX * sensitivity;
+      this.freeCamera.pitch = THREE.MathUtils.clamp(this.freeCamera.pitch - movementY * sensitivity, -1.25, 1.25);
+      return;
+    }
+
+    const avatar = this.callbacks.getAvatar();
+    if (!avatar || avatar.shutdown) {
+      return;
+    }
+
+    const horizontalDirection = this.callbacks.getOrbitHorizontalInverted() ? -1 : 1;
+    const verticalDirection = this.callbacks.getOrbitVerticalInverted() ? 1 : -1;
+    avatar.yaw -= movementX * sensitivity * horizontalDirection;
+    avatar.pitch = THREE.MathUtils.clamp(avatar.pitch - movementY * sensitivity, -1.1, 1.1);
+    this.thirdPersonCamera.orbitYawOffset = 0;
+    this.thirdPersonCamera.orbitPitchOffset = THREE.MathUtils.clamp(
+      this.thirdPersonCamera.orbitPitchOffset + movementY * sensitivity * verticalDirection,
+      -0.85,
+      0.85,
+    );
+  }
+
+  private endRightMouseHold(exitPointerLock = true): void {
+    this.rightMouseHeld = false;
+    this.thirdPersonCamera.steerFollow = false;
+
+    if (exitPointerLock && document.pointerLockElement === this.canvas) {
+      document.exitPointerLock();
+    }
   }
 }
