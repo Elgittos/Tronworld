@@ -70,7 +70,6 @@ export class AvatarVisual {
 
   private readonly bodyMat: THREE.MeshPhysicalMaterial;
   private readonly eyeMat: THREE.MeshStandardMaterial;
-  private readonly eyeGlowSpriteMat: THREE.SpriteMaterial;
   private readonly ringMat: THREE.MeshStandardMaterial;
   private readonly glowSpriteMat: THREE.SpriteMaterial;
   private readonly bloomSpriteMat: THREE.SpriteMaterial;
@@ -103,15 +102,6 @@ export class AvatarVisual {
       emissiveIntensity: 1.5,
       roughness: 0,
       metalness: 1,
-    });
-    this.eyeGlowSpriteMat = new THREE.SpriteMaterial({
-      map: createSoftGlowTexture(),
-      color: tint,
-      transparent: true,
-      opacity: 0.24,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      fog: false,
     });
     this.ringMat = new THREE.MeshStandardMaterial({
       color: WHITE_REACTOR,
@@ -167,9 +157,7 @@ export class AvatarVisual {
     this.bodyMat.emissiveIntensity = visualState.bodyGlowIntensity;
     this.eyeMat.color.setHex(visualState.eyes);
     this.eyeMat.emissive.setHex(visualState.eyes);
-    this.eyeMat.emissiveIntensity = visualState.eyeIntensity * (0.35 + eyeGlow * 2.4);
-    this.eyeGlowSpriteMat.color.setHex(visualState.eyes);
-    this.eyeGlowSpriteMat.opacity = visualState.active ? 0.06 + eyeGlow * 0.44 : 0.025;
+    this.eyeMat.emissiveIntensity = visualState.eyeIntensity * (0.75 + eyeGlow * 5.4);
     this.edgeMat.color.setHex(visualState.edge);
     this.edgeMat.opacity = visualState.edgeOpacity;
     this.ringMat.color.setHex(visualState.reactor);
@@ -218,14 +206,6 @@ export class AvatarVisual {
       this.bloomSpriteMat.opacity = visualState.active
         ? 0.015 + reactorBloom * 0.24 + heartbeat * reactorBloom * 0.08
         : 0.035 + reactorBloom * 0.26;
-    }
-
-    for (const name of ['leftEyeGlow', 'rightEyeGlow']) {
-      const glow = this.group.getObjectByName(name);
-      if (glow) {
-        const scale = visualState.active ? 0.16 + eyeGlow * 0.18 : 0.12;
-        glow.scale.set(scale, scale, 1);
-      }
     }
   }
 
@@ -278,15 +258,7 @@ export class AvatarVisual {
     leftEye.position.set(-0.06, eyeY, 0.15);
     const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), this.eyeMat);
     rightEye.position.set(0.06, eyeY, 0.15);
-    const leftGlow = new THREE.Sprite(this.eyeGlowSpriteMat);
-    leftGlow.name = 'leftEyeGlow';
-    leftGlow.position.set(-0.06, eyeY, 0.166);
-    leftGlow.scale.set(0.22, 0.22, 1);
-    const rightGlow = new THREE.Sprite(this.eyeGlowSpriteMat);
-    rightGlow.name = 'rightEyeGlow';
-    rightGlow.position.set(0.06, eyeY, 0.166);
-    rightGlow.scale.set(0.22, 0.22, 1);
-    twinDots.add(leftGlow, rightGlow, leftEye, rightEye);
+    twinDots.add(leftEye, rightEye);
     this.group.add(twinDots);
   }
 
