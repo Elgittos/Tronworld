@@ -106,6 +106,18 @@ export class UIController {
           <input id="transferCap" type="number" min="0" max="100" step="1" placeholder="Amount" />
         </div>
       </section>
+      <details class="keybind-panel">
+        <summary>Bindings</summary>
+        <div class="bind-row"><span>Forward</span><button disabled>W</button></div>
+        <div class="bind-row"><span>Back</span><button disabled>S</button></div>
+        <div class="bind-row"><span>Turn left</span><button disabled>A</button></div>
+        <div class="bind-row"><span>Turn right</span><button disabled>D</button></div>
+        <div class="bind-row"><span>Jump</span><button disabled>Space</button></div>
+        <div class="bind-row"><span>Build</span><button disabled>Q</button></div>
+        <div class="bind-row"><span>Interact</span><button disabled>E</button></div>
+        <div class="bind-row"><span>Steer move</span><button disabled>Right mouse</button></div>
+        <div class="bind-row"><span>Orbit view</span><button disabled>Left mouse</button></div>
+      </details>
       <section class="status-stack">
         <div data-context-line></div>
         <div data-status-line>Create an avatar to begin.</div>

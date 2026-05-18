@@ -24,6 +24,7 @@ input {
 
 canvas {
   display: block;
+  cursor: crosshair;
 }
 
 .ui-root {
@@ -47,7 +48,9 @@ canvas {
   transform: translate(-50%, -50%);
   border: 1px solid rgba(136, 255, 255, 0.5);
   border-radius: 50%;
-  box-shadow: 0 0 16px rgba(136, 255, 255, 0.24);
+  box-shadow:
+    0 0 10px rgba(136, 255, 255, 0.35),
+    0 0 28px rgba(136, 255, 255, 0.18);
 }
 
 .crosshair::before,
@@ -90,7 +93,9 @@ canvas {
   border: 1px solid rgba(136, 255, 255, 0.34);
   background: rgba(5, 14, 28, 0.9);
   padding: 22px;
-  box-shadow: 0 0 40px rgba(0, 255, 136, 0.12);
+  box-shadow:
+    0 0 28px rgba(0, 255, 136, 0.14),
+    0 0 70px rgba(136, 255, 255, 0.08);
 }
 
 .eyebrow {
@@ -156,7 +161,9 @@ input[type="range"] {
   border: 1px solid rgba(221, 255, 255, 0.35);
   background: var(--swatch);
   cursor: pointer;
-  box-shadow: 0 0 18px color-mix(in srgb, var(--swatch) 36%, transparent);
+  box-shadow:
+    0 0 12px color-mix(in srgb, var(--swatch) 42%, transparent),
+    0 0 26px color-mix(in srgb, var(--swatch) 24%, transparent);
 }
 
 .swatch.active {
@@ -229,18 +236,24 @@ input[type="range"] {
   width: 0%;
   height: 100%;
   background: #f5fff7;
-  box-shadow: 0 0 16px rgba(245, 255, 247, 0.68);
+  box-shadow:
+    0 0 12px rgba(245, 255, 247, 0.86),
+    0 0 30px rgba(245, 255, 247, 0.44);
 }
 
 .meter-fill.medium {
   background: #ff8a1f;
-  box-shadow: 0 0 16px rgba(255, 138, 31, 0.68);
+  box-shadow:
+    0 0 12px rgba(255, 138, 31, 0.86),
+    0 0 30px rgba(255, 138, 31, 0.44);
 }
 
 .meter-fill.critical,
 .meter-fill.shutdown {
   background: #ff2020;
-  box-shadow: 0 0 16px rgba(255, 32, 32, 0.76);
+  box-shadow:
+    0 0 12px rgba(255, 32, 32, 0.92),
+    0 0 34px rgba(255, 32, 32, 0.5);
 }
 
 .meter-fill.shutdown {
@@ -261,7 +274,9 @@ input[type="range"] {
 .mode-strip button.active {
   border-color: #00ff88;
   color: #f5fff7;
-  box-shadow: inset 0 0 18px rgba(0, 255, 136, 0.12);
+  box-shadow:
+    inset 0 0 18px rgba(0, 255, 136, 0.14),
+    0 0 20px rgba(0, 255, 136, 0.18);
 }
 
 .free-speed {
@@ -293,6 +308,9 @@ input[type="range"] {
   padding: 12px;
   border: 1px solid rgba(136, 255, 255, 0.28);
   background: rgba(2, 6, 16, 0.78);
+  box-shadow:
+    0 0 24px rgba(0, 255, 136, 0.08),
+    0 0 56px rgba(136, 255, 255, 0.05);
   transform: translateX(calc(-100% - 24px));
   transition: transform 160ms ease;
   pointer-events: auto;
@@ -325,7 +343,9 @@ input[type="range"] {
 
 .shape-card.active {
   border-color: #00ff88;
-  box-shadow: inset 0 0 18px rgba(0, 255, 136, 0.12);
+  box-shadow:
+    inset 0 0 18px rgba(0, 255, 136, 0.14),
+    0 0 18px rgba(0, 255, 136, 0.16);
 }
 
 .shape-card strong {
@@ -364,6 +384,44 @@ input[type="range"] {
   text-shadow: 0 0 12px rgba(0, 255, 136, 0.22);
 }
 
+.keybind-panel {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 226px;
+  border: 1px solid rgba(136, 255, 255, 0.24);
+  background: rgba(2, 6, 16, 0.68);
+  padding: 8px 10px;
+  pointer-events: auto;
+  font-size: 12px;
+  box-shadow:
+    0 0 24px rgba(0, 255, 136, 0.08),
+    0 0 48px rgba(136, 255, 255, 0.06);
+}
+
+.keybind-panel summary {
+  cursor: pointer;
+  color: #f5fff7;
+}
+
+.bind-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  color: rgba(221, 255, 255, 0.76);
+}
+
+.bind-row button {
+  min-width: 48px;
+  min-height: 26px;
+  border: 1px solid rgba(136, 255, 255, 0.26);
+  background: rgba(6, 18, 32, 0.76);
+  color: rgba(221, 255, 255, 0.72);
+  box-shadow: inset 0 0 14px rgba(136, 255, 255, 0.06);
+}
+
 @media (max-width: 760px) {
   .hud-main {
     grid-template-columns: 1fr;
@@ -378,6 +436,13 @@ input[type="range"] {
   .build-panel {
     top: 196px;
     width: min(330px, calc(100vw - 28px));
+  }
+
+  .keybind-panel {
+    top: auto;
+    right: 14px;
+    bottom: 84px;
+    width: min(226px, calc(100vw - 28px));
   }
 
   .personality-grid {

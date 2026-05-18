@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { Chunk } from '../world/types';
 import {
   AvatarState,
@@ -19,6 +23,11 @@ export type FreeCameraState = {
   position: THREE.Vector3;
   yaw: number;
   pitch: number;
+};
+
+export type ThirdPersonCameraState = {
+  orbitYawOffset: number;
+  orbitPitchOffset: number;
 };
 
 export type BuildSelection = {
@@ -45,6 +54,7 @@ const CAMERA_HEIGHT = 1.62;
 
 export class WorldRenderer {
   readonly renderer: THREE.WebGLRenderer;
+  readonly composer: EffectComposer;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.05, 900);
 
@@ -68,6 +78,13 @@ export class WorldRenderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.25;
     container.appendChild(this.renderer.domElement);
+
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.composer.setSize(window.innerWidth, window.innerHeight);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.42, 0.32, 0.72));
+    this.composer.addPass(new OutputPass());
 
     this.groundPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(10000, 10000),
@@ -99,10 +116,16 @@ export class WorldRenderer {
     this.syncAvatars(world, mode);
   }
 
-  update(world: WorldState, mode: CameraMode, freeCamera: FreeCameraState, time: number): void {
+  update(
+    world: WorldState,
+    mode: CameraMode,
+    freeCamera: FreeCameraState,
+    thirdPersonCamera: ThirdPersonCameraState,
+    time: number,
+  ): void {
     this.sync(world, mode);
     const selected = world.getSelectedAvatar();
-    this.updateCamera(mode, selected, freeCamera);
+    this.updateCamera(mode, selected, freeCamera, thirdPersonCamera);
 
     for (const [id, visual] of this.avatarGroups) {
       const avatar = world.avatars.get(id);
@@ -111,7 +134,7 @@ export class WorldRenderer {
       }
     }
 
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   }
 
   getPlacementCandidate(world: WorldState, selection: BuildSelection, avatarId?: string): PlacementCandidate | undefined {
@@ -333,7 +356,12 @@ export class WorldRenderer {
     return group;
   }
 
-  private updateCamera(mode: CameraMode, avatar: AvatarState | undefined, freeCamera: FreeCameraState): void {
+  private updateCamera(
+    mode: CameraMode,
+    avatar: AvatarState | undefined,
+    freeCamera: FreeCameraState,
+    thirdPersonCamera: ThirdPersonCameraState,
+  ): void {
     if (mode === 'free_camera' || !avatar) {
       const direction = new THREE.Vector3(
         Math.sin(freeCamera.yaw) * Math.cos(freeCamera.pitch),
@@ -360,7 +388,11 @@ export class WorldRenderer {
       return;
     }
 
-    const desired = avatarBase.clone().add(new THREE.Vector3(0, 2.45, 0)).sub(forward.multiplyScalar(5.4));
+    const orbitYaw = avatar.yaw + thirdPersonCamera.orbitYawOffset;
+    const orbitForward = new THREE.Vector3(Math.sin(orbitYaw), 0, Math.cos(orbitYaw));
+    const orbitHeight = 2.45 + thirdPersonCamera.orbitPitchOffset * 2.2;
+    const orbitDistance = 5.4 - Math.abs(thirdPersonCamera.orbitPitchOffset) * 0.85;
+    const desired = avatarBase.clone().add(new THREE.Vector3(0, orbitHeight, 0)).sub(orbitForward.multiplyScalar(orbitDistance));
     this.camera.position.lerp(desired, 0.16);
     this.cameraTarget.lerp(avatarBase.clone().add(new THREE.Vector3(0, 1.16, 0)), 0.2);
     this.camera.lookAt(this.cameraTarget);
@@ -459,5 +491,6 @@ export class WorldRenderer {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.composer.setSize(window.innerWidth, window.innerHeight);
   }
 }

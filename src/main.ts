@@ -62,10 +62,11 @@ function tick(now: number): void {
 
   const avatar = world.getSelectedAvatar();
 
+  controls.updateHeldCamera(dt);
   controls.updateFreeCamera(dt);
 
   if (avatar && cameraMode !== 'free_camera') {
-    const move = controls.getAvatarMove(avatar);
+    const move = controls.getAvatarMove(avatar, dt);
     const physicsResult = physics.moveAvatar(avatar.id, move.velocity, move.jump, dt);
 
     if (physicsResult) {
@@ -86,7 +87,7 @@ function tick(now: number): void {
 
   world.update(dt);
   syncPhysicsObjects();
-  renderer.update(world, cameraMode, controls.freeCamera, now / 1000);
+  renderer.update(world, cameraMode, controls.freeCamera, controls.thirdPersonCamera, now / 1000);
   ui.update(world, placementResult ?? lastActionResult, contextText);
 
   requestAnimationFrame(tick);
