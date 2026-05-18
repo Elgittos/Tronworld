@@ -191,6 +191,14 @@ export class InputController {
   }
 
   private bind(): void {
+    document.addEventListener(
+      'pointermove',
+      (event) => {
+        this.updatePointerPosition(event);
+      },
+      { capture: true },
+    );
+
     this.canvas.addEventListener('pointerdown', (event) => {
       this.updatePointerPosition(event);
       if (event.button !== 0 && event.button !== 2) {
@@ -343,7 +351,7 @@ export class InputController {
     });
   }
 
-  private updatePointerPosition(event: PointerEvent): void {
+  private updatePointerPosition(event: { clientX: number; clientY: number }): void {
     const rect = this.canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
