@@ -1,4 +1,5 @@
 import { ActionResult } from '../actions/actions';
+import { DEFAULT_LM_STUDIO_CONFIG, LLMProviderConfig } from '../llm/LLMProviderConfig';
 import type { GlowSettings } from '../render/worldRenderer';
 import { AvatarState, BlockShape, BLOCK_DEFINITIONS, CameraMode, PersonalityWeights, WORLD_RULES } from '../world/types';
 import { WorldState } from '../world/worldState';
@@ -7,16 +8,37 @@ import { AmbientAudio } from './ambientAudio';
 type UICallbacks = {
   onCreateAvatar: (options: { name: string; color: string; personality: PersonalityWeights }) => void;
   onCameraModeChange: (mode: CameraMode) => void;
+  onSpawnAiAvatar: () => void;
+  onLlmConfigChange: (config: LLMProviderConfig) => void;
 };
 
 const SHAPES: BlockShape[] = ['cube', 'half_cube', 'ramp', 'tile', 'pillar', 'tesla_node'];
 const COLORS = ['#00ff88', '#44f2ff', '#2f7dff', '#00d4c8', '#9b7cff', '#d34dff'];
 const AMBIENT_TRACKS = [
-  '/audio/ambient/Grid_Ambience_Suite_2026-05-18T195753.mp3',
-  '/audio/ambient/Grid_Ambience_Suite_2026-05-18T195753%20(1).mp3',
-  '/audio/ambient/Grid_Ambience_Suite_2026-05-18T195753%20(2).mp3',
-  '/audio/ambient/Grid_Ambience_Suite_2026-05-18T195753%20(3).mp3',
+  '/audio/ambient_music/Grid_Ambience_Suite_2026-05-18T195753.mp3',
+  '/audio/ambient_music/Grid_Ambience_Suite_2026-05-18T195753%20(1).mp3',
+  '/audio/ambient_music/Grid_Ambience_Suite_2026-05-18T195753%20(2).mp3',
+  '/audio/ambient_music/Grid_Ambience_Suite_2026-05-18T195753%20(3).mp3',
 ];
+
+const LLM_STORAGE_KEYS = {
+  provider: 'tron-world:llm-provider',
+  baseUrl: 'tron-world:llm-base-url',
+  model: 'tron-world:llm-model',
+  apiKey: 'tron-world:llm-api-key',
+} as const;
+
+function storageValue(key: string, fallback: string): string {
+  try {
+    return window.localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function escapeAttribute(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
 
 export class UIController {
   readonly root: HTMLElement;
@@ -38,6 +60,10 @@ export class UIController {
   eyeBloom = 36;
   ambientEnabled = true;
   ambientVolume = 14;
+  llmProvider = storageValue(LLM_STORAGE_KEYS.provider, DEFAULT_LM_STUDIO_CONFIG.provider) as LLMProviderConfig['provider'];
+  llmBaseUrl = storageValue(LLM_STORAGE_KEYS.baseUrl, DEFAULT_LM_STUDIO_CONFIG.baseUrl ?? '');
+  llmModel = storageValue(LLM_STORAGE_KEYS.model, DEFAULT_LM_STUDIO_CONFIG.model ?? 'local-model');
+  llmApiKey = storageValue(LLM_STORAGE_KEYS.apiKey, DEFAULT_LM_STUDIO_CONFIG.apiKey ?? 'not-needed');
   teslaContribution = 0;
   transferCap = 0;
 
@@ -52,6 +78,9 @@ export class UIController {
   private readonly personalityLine: HTMLElement;
   private readonly povReactorReflection: HTMLElement;
   private readonly freeSpeedWrap: HTMLElement;
+  private readonly createPanel: HTMLElement;
+  private readonly menuOverlay: HTMLElement;
+  private readonly llmStatusLine: HTMLElement;
   private readonly ambientAudio = new AmbientAudio(AMBIENT_TRACKS);
   private readonly contributionInput: HTMLInputElement;
   private readonly transferInput: HTMLInputElement;
@@ -70,6 +99,153 @@ export class UIController {
       <div class="world-vignette"></div>
       <div class="pov-reactor-reflection" data-pov-reactor-reflection></div>
       <div class="crosshair"></div>
+      <button class="menu-button" data-menu-open>Menu</button>
+      <section class="menu-overlay hidden" data-menu-overlay>
+        <div class="menu-modal">
+          <aside class="menu-nav">
+            <button class="active" data-menu-tab="settings">Settings</button>
+            <button data-menu-tab="bindings">Bindings</button>
+            <button data-menu-tab="manual">Manual</button>
+            <button data-menu-tab="avatar">Avatar</button>
+            <button data-menu-tab="spawn">Spawn</button>
+            <button data-menu-tab="llm">AI Connection</button>
+          </aside>
+          <div class="menu-content">
+            <div class="menu-header">
+              <strong data-menu-title>Settings</strong>
+              <button data-menu-close>Close</button>
+            </div>
+            <section class="menu-section active" data-menu-section="settings">
+              <div class="settings-grid">
+                <label class="toggle-row">
+                  <span>Ambient music</span>
+                  <input id="ambientMusic" type="checkbox" checked />
+                </label>
+                <label>
+                  <span>Ambient volume</span>
+                  <input id="ambientVolume" type="range" min="0" max="40" step="1" value="14" />
+                  <strong data-ambient-volume-value>14</strong>
+                </label>
+                <label>
+                  <span>Tesla Bloom</span>
+                  <input id="glowLevel" type="range" min="0" max="100" step="1" value="22" />
+                  <strong data-glow-value>22</strong>
+                </label>
+                <label>
+                  <span>Tesla Glow</span>
+                  <input id="teslaGlow" type="range" min="0" max="100" step="1" value="42" />
+                  <strong data-tesla-glow-value>42</strong>
+                </label>
+                <label>
+                  <span>Tesla Halo</span>
+                  <input id="teslaHalo" type="range" min="0" max="100" step="1" value="42" />
+                  <strong data-tesla-halo-value>42</strong>
+                </label>
+                <label>
+                  <span>Reactor Glow</span>
+                  <input id="reactorGlow" type="range" min="0" max="100" step="1" value="44" />
+                  <strong data-reactor-glow-value>44</strong>
+                </label>
+                <label>
+                  <span>Reactor Bloom</span>
+                  <input id="reactorBloom" type="range" min="0" max="100" step="1" value="54" />
+                  <strong data-reactor-bloom-value>54</strong>
+                </label>
+                <label>
+                  <span>Eyes Glow</span>
+                  <input id="eyeGlow" type="range" min="0" max="100" step="1" value="36" />
+                  <strong data-eye-glow-value>36</strong>
+                </label>
+                <label>
+                  <span>Eyes Bloom</span>
+                  <input id="eyeBloom" type="range" min="0" max="100" step="1" value="36" />
+                  <strong data-eye-bloom-value>36</strong>
+                </label>
+              </div>
+            </section>
+            <section class="menu-section" data-menu-section="bindings">
+              <div class="bind-row"><span>Forward</span><button disabled>W</button></div>
+              <div class="bind-row"><span>Back</span><button disabled>S</button></div>
+              <div class="bind-row"><span>Turn left</span><button disabled>A</button></div>
+              <div class="bind-row"><span>Turn right</span><button disabled>D</button></div>
+              <div class="bind-row"><span>Jump</span><button disabled>Space</button></div>
+              <div class="bind-row"><span>Build</span><button disabled>1</button></div>
+              <div class="bind-row"><span>Interact</span><button disabled>E</button></div>
+              <div class="bind-row"><span>Zoom</span><button disabled>Wheel</button></div>
+              <div class="bind-row"><span>Steer move</span><button disabled>Right mouse</button></div>
+              <div class="bind-row"><span>Orbit view</span><button disabled>Left mouse</button></div>
+            </section>
+            <section class="menu-section" data-menu-section="manual">
+              <div class="manual-tabs">
+                <button class="active" data-manual-tab="start">Start</button>
+                <button data-manual-tab="ai">AI</button>
+                <button data-manual-tab="lmstudio">LM Studio</button>
+                <button data-manual-tab="config">Config</button>
+                <button data-manual-tab="rules">Rules</button>
+              </div>
+              <div class="manual-section active" data-manual-section="start">
+                <h2>Start</h2>
+                <p>Run <code>npm run dev</code> from the project root. Open the local URL printed by Vite.</p>
+              </div>
+              <div class="manual-section" data-manual-section="ai">
+                <h2>AI Flow</h2>
+                <p>Agents observe the world, receive a prompt, propose one JSON action, and the engine validates it before applying anything.</p>
+              </div>
+              <div class="manual-section" data-manual-section="lmstudio">
+                <h2>LM Studio</h2>
+                <p>Start LM Studio's local server at <code>http://localhost:1234/v1</code>. The app calls <code>/chat/completions</code>.</p>
+              </div>
+              <div class="manual-section" data-manual-section="config">
+                <h2>Config</h2>
+                <p>Use AI Connection in this menu to set provider, base URL, model, and key. Code edits are not required.</p>
+              </div>
+              <div class="manual-section" data-manual-section="rules">
+                <h2>Rules</h2>
+                <p>The model cannot mutate the world, teleport, invent actions, control cameras, or decide success. Invalid output falls back safely.</p>
+              </div>
+            </section>
+            <section class="menu-section" data-menu-section="avatar">
+              <div class="menu-card">
+                <h2>Avatar Creation</h2>
+                <p>Create another manual avatar with the same color and personality controls used at startup.</p>
+                <button data-open-avatar-create>Create Manual Avatar</button>
+              </div>
+            </section>
+            <section class="menu-section" data-menu-section="spawn">
+              <div class="menu-card">
+                <h2>Spawn Controls</h2>
+                <p>Spawn an AI-controlled avatar near the starting Tesla Node. It will use the current AI connection settings.</p>
+                <button data-spawn-ai>Spawn AI Agent</button>
+              </div>
+            </section>
+            <section class="menu-section" data-menu-section="llm">
+              <div class="llm-form">
+                <label>
+                  <span>Provider</span>
+                  <select id="llmProvider">
+                    <option value="openai-compatible" ${this.llmProvider === 'openai-compatible' ? 'selected' : ''}>OpenAI-compatible</option>
+                    <option value="scripted" ${this.llmProvider === 'scripted' ? 'selected' : ''}>Scripted fallback</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Base URL</span>
+                  <input id="llmBaseUrl" value="${escapeAttribute(this.llmBaseUrl)}" />
+                </label>
+                <label>
+                  <span>Model</span>
+                  <input id="llmModel" value="${escapeAttribute(this.llmModel)}" />
+                </label>
+                <label>
+                  <span>API key</span>
+                  <input id="llmApiKey" value="${escapeAttribute(this.llmApiKey)}" />
+                </label>
+                <button data-apply-llm>Apply AI Connection</button>
+                <p data-llm-status>Current: ${escapeAttribute(this.llmProvider)} / ${escapeAttribute(this.llmModel)}</p>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
       <section class="avatar-create" data-create-panel>
         <div class="create-shell">
           <p class="eyebrow">Tron World MVP</p>
@@ -115,55 +291,6 @@ export class UIController {
             <span data-free-speed-value>10</span>
           </div>
         </div>
-        <details class="settings-panel">
-          <summary>Settings</summary>
-          <div class="settings-grid">
-            <label class="toggle-row">
-              <span>Ambient music</span>
-              <input id="ambientMusic" type="checkbox" checked />
-            </label>
-            <label>
-              <span>Ambient volume</span>
-              <input id="ambientVolume" type="range" min="0" max="40" step="1" value="14" />
-              <strong data-ambient-volume-value>14</strong>
-            </label>
-            <label>
-              <span>Tesla Bloom</span>
-              <input id="glowLevel" type="range" min="0" max="100" step="1" value="22" />
-              <strong data-glow-value>22</strong>
-            </label>
-            <label>
-              <span>Tesla Glow</span>
-              <input id="teslaGlow" type="range" min="0" max="100" step="1" value="42" />
-              <strong data-tesla-glow-value>42</strong>
-            </label>
-            <label>
-              <span>Tesla Halo</span>
-              <input id="teslaHalo" type="range" min="0" max="100" step="1" value="42" />
-              <strong data-tesla-halo-value>42</strong>
-            </label>
-            <label>
-              <span>Reactor Glow</span>
-              <input id="reactorGlow" type="range" min="0" max="100" step="1" value="44" />
-              <strong data-reactor-glow-value>44</strong>
-            </label>
-            <label>
-              <span>Reactor Bloom</span>
-              <input id="reactorBloom" type="range" min="0" max="100" step="1" value="54" />
-              <strong data-reactor-bloom-value>54</strong>
-            </label>
-            <label>
-              <span>Eyes Glow</span>
-              <input id="eyeGlow" type="range" min="0" max="100" step="1" value="36" />
-              <strong data-eye-glow-value>36</strong>
-            </label>
-            <label>
-              <span>Eyes Bloom</span>
-              <input id="eyeBloom" type="range" min="0" max="100" step="1" value="36" />
-              <strong data-eye-bloom-value>36</strong>
-            </label>
-          </div>
-        </details>
         <div class="hud-lines">
           <span data-field-line>Field: --</span>
           <span data-personality-line>Personality: --</span>
@@ -188,51 +315,6 @@ export class UIController {
           <input id="transferCap" type="number" min="0" max="100" step="1" placeholder="Amount" />
         </div>
       </section>
-      <section class="right-menu">
-        <details class="keybind-panel">
-          <summary>Bindings</summary>
-          <div class="bind-row"><span>Forward</span><button disabled>W</button></div>
-          <div class="bind-row"><span>Back</span><button disabled>S</button></div>
-          <div class="bind-row"><span>Turn left</span><button disabled>A</button></div>
-          <div class="bind-row"><span>Turn right</span><button disabled>D</button></div>
-          <div class="bind-row"><span>Jump</span><button disabled>Space</button></div>
-          <div class="bind-row"><span>Build</span><button disabled>1</button></div>
-          <div class="bind-row"><span>Interact</span><button disabled>E</button></div>
-          <div class="bind-row"><span>Zoom</span><button disabled>Wheel</button></div>
-          <div class="bind-row"><span>Steer move</span><button disabled>Right mouse</button></div>
-          <div class="bind-row"><span>Orbit view</span><button disabled>Left mouse</button></div>
-        </details>
-        <details class="manual-panel">
-          <summary>Manual</summary>
-          <div class="manual-tabs">
-            <button class="active" data-manual-tab="start">Start</button>
-            <button data-manual-tab="ai">AI</button>
-            <button data-manual-tab="lmstudio">LM Studio</button>
-            <button data-manual-tab="config">Config</button>
-            <button data-manual-tab="rules">Rules</button>
-          </div>
-          <div class="manual-section active" data-manual-section="start">
-            <h2>Start</h2>
-            <p>Run <code>npm run dev</code> from the project root. Open the local URL printed by Vite.</p>
-          </div>
-          <div class="manual-section" data-manual-section="ai">
-            <h2>AI Flow</h2>
-            <p>Agents observe the world, receive a prompt, propose one JSON action, and the engine validates it before applying anything.</p>
-          </div>
-          <div class="manual-section" data-manual-section="lmstudio">
-            <h2>LM Studio</h2>
-            <p>Start LM Studio's local server at <code>http://localhost:1234/v1</code>. The app calls <code>/chat/completions</code>.</p>
-          </div>
-          <div class="manual-section" data-manual-section="config">
-            <h2>Config</h2>
-            <p>Default provider is OpenAI-compatible. Set <code>tron-world:llm-model</code> in localStorage to the loaded LM Studio model name, then refresh.</p>
-          </div>
-          <div class="manual-section" data-manual-section="rules">
-            <h2>Rules</h2>
-            <p>The model cannot mutate the world, teleport, invent actions, control cameras, or decide success. Invalid output falls back safely.</p>
-          </div>
-        </details>
-      </section>
       <section class="status-stack">
         <div data-context-line></div>
         <div data-status-line>Create an avatar to begin.</div>
@@ -248,10 +330,14 @@ export class UIController {
     this.personalityLine = this.get('[data-personality-line]');
     this.povReactorReflection = this.get('[data-pov-reactor-reflection]');
     this.freeSpeedWrap = this.get('[data-free-speed-wrap]');
+    this.createPanel = this.get('[data-create-panel]');
+    this.menuOverlay = this.get('[data-menu-overlay]');
+    this.llmStatusLine = this.get('[data-llm-status]');
     this.contributionInput = this.get<HTMLInputElement>('#teslaContribution');
     this.transferInput = this.get<HTMLInputElement>('#transferCap');
 
     this.bindCreatePanel();
+    this.bindMenuPanel();
     this.bindHud();
     this.bindBuildPanel();
     this.bindManualPanel();
@@ -417,6 +503,81 @@ export class UIController {
     row.innerHTML = `<span>${label}</span><input type="range" min="0" max="100" step="1" value="${value}" />`;
     parent.appendChild(row);
     return row.querySelector('input') as HTMLInputElement;
+  }
+
+  private bindMenuPanel(): void {
+    const menuTitle = this.get<HTMLElement>('[data-menu-title]');
+    const menuButtons = [...this.root.querySelectorAll<HTMLButtonElement>('[data-menu-tab]')];
+    const menuSections = [...this.root.querySelectorAll<HTMLElement>('[data-menu-section]')];
+
+    this.get<HTMLButtonElement>('[data-menu-open]').addEventListener('click', () => {
+      this.menuOverlay.classList.remove('hidden');
+    });
+
+    this.get<HTMLButtonElement>('[data-menu-close]').addEventListener('click', () => {
+      this.menuOverlay.classList.add('hidden');
+    });
+
+    this.menuOverlay.addEventListener('click', (event) => {
+      if (event.target === this.menuOverlay) {
+        this.menuOverlay.classList.add('hidden');
+      }
+    });
+
+    menuButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.menuTab;
+        menuButtons.forEach((entry) => entry.classList.toggle('active', entry === button));
+        menuSections.forEach((section) => {
+          section.classList.toggle('active', section.dataset.menuSection === key);
+        });
+        menuTitle.textContent = button.textContent ?? 'Menu';
+      });
+    });
+
+    this.get<HTMLButtonElement>('[data-open-avatar-create]').addEventListener('click', () => {
+      this.createPanel.classList.remove('hidden');
+      this.menuOverlay.classList.add('hidden');
+    });
+
+    this.get<HTMLButtonElement>('[data-spawn-ai]').addEventListener('click', () => {
+      this.callbacks.onSpawnAiAvatar();
+      this.llmStatusLine.textContent = 'Spawned AI agent using current connection settings.';
+    });
+
+    this.get<HTMLButtonElement>('[data-apply-llm]').addEventListener('click', () => this.applyLlmConfig());
+  }
+
+  private applyLlmConfig(): void {
+    const provider = this.get<HTMLSelectElement>('#llmProvider').value as LLMProviderConfig['provider'];
+    const baseUrl = this.get<HTMLInputElement>('#llmBaseUrl').value.trim() || DEFAULT_LM_STUDIO_CONFIG.baseUrl;
+    const model = this.get<HTMLInputElement>('#llmModel').value.trim() || DEFAULT_LM_STUDIO_CONFIG.model;
+    const apiKey = this.get<HTMLInputElement>('#llmApiKey').value.trim() || DEFAULT_LM_STUDIO_CONFIG.apiKey;
+
+    this.llmProvider = provider;
+    this.llmBaseUrl = baseUrl ?? '';
+    this.llmModel = model ?? 'local-model';
+    this.llmApiKey = apiKey ?? 'not-needed';
+
+    try {
+      window.localStorage.setItem(LLM_STORAGE_KEYS.provider, this.llmProvider);
+      window.localStorage.setItem(LLM_STORAGE_KEYS.baseUrl, this.llmBaseUrl);
+      window.localStorage.setItem(LLM_STORAGE_KEYS.model, this.llmModel);
+      window.localStorage.setItem(LLM_STORAGE_KEYS.apiKey, this.llmApiKey);
+    } catch {
+      this.llmStatusLine.textContent = 'Connection applied, but browser storage was unavailable.';
+    }
+
+    this.callbacks.onLlmConfigChange({
+      provider: this.llmProvider,
+      baseUrl: this.llmBaseUrl,
+      model: this.llmModel,
+      apiKey: this.llmApiKey,
+      temperature: DEFAULT_LM_STUDIO_CONFIG.temperature,
+      maxTokens: DEFAULT_LM_STUDIO_CONFIG.maxTokens,
+      timeoutMs: DEFAULT_LM_STUDIO_CONFIG.timeoutMs,
+    });
+    this.llmStatusLine.textContent = `Applied: ${this.llmProvider} / ${this.llmModel}`;
   }
 
   private bindHud(): void {

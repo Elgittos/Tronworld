@@ -45,6 +45,14 @@ ui = new UIController({
   onCameraModeChange: (mode) => {
     cameraMode = mode;
   },
+  onSpawnAiAvatar: () => {
+    const agent = spawnAiAgent();
+    world.lastMessage = `${agent.name} spawned from the menu.`;
+  },
+  onLlmConfigChange: (config) => {
+    agentGateway.setConfig(config);
+    world.lastMessage = `AI connection set to ${config.provider}.`;
+  },
 });
 
 controls = new InputController(renderer.renderer.domElement, {
@@ -117,10 +125,15 @@ function ensureAiAgent(): void {
     return;
   }
 
+  spawnAiAgent('Grid Witness');
+}
+
+function spawnAiAgent(name?: string) {
+  const aiCount = [...world.avatars.values()].filter((avatar) => avatar.control === 'ai').length;
   const agent = world.createAiAvatar({
-    name: 'Grid Witness',
+    name: name ?? `Grid Witness ${aiCount + 1}`,
     color: '#44f2ff',
-    position: { x: -2.5, y: 0, z: 3.5 },
+    position: { x: -2.5 - aiCount * 1.35, y: 0, z: 3.5 + aiCount * 0.65 },
     personality: {
       focus: 30,
       connection: 22,
@@ -129,6 +142,7 @@ function ensureAiAgent(): void {
     },
   });
   physics.createAvatar(agent.id, agent.position);
+  return agent;
 }
 
 function updateAiAgents(dt: number, now: number): void {

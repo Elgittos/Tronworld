@@ -27,7 +27,7 @@ export class AgentBrainGateway {
   private readonly memory = new AgentMemory();
   private readonly observationBuilder: AgentObservationBuilder;
   private readonly validator: ActionValidator;
-  private readonly brain: AgentBrain;
+  private brain: AgentBrain;
   private readonly pending = new Set<string>();
   private readonly nextDecisionAt = new Map<string, number>();
   private readonly movementIntents = new Map<string, AgentMovementIntent>();
@@ -42,6 +42,12 @@ export class AgentBrainGateway {
     this.observationBuilder = new AgentObservationBuilder(eventLog);
     this.validator = new ActionValidator(world, actionSystem);
     this.brain = config.provider === 'scripted' ? new ScriptedBrain() : new OpenAICompatibleBrain(config);
+  }
+
+  setConfig(config: LLMProviderConfig): void {
+    this.brain = config.provider === 'scripted' ? new ScriptedBrain() : new OpenAICompatibleBrain(config);
+    this.pending.clear();
+    this.nextDecisionAt.clear();
   }
 
   update(now: number): void {
