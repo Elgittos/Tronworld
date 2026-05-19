@@ -188,19 +188,51 @@ export class UIController {
           <input id="transferCap" type="number" min="0" max="100" step="1" placeholder="Amount" />
         </div>
       </section>
-      <details class="keybind-panel">
-        <summary>Bindings</summary>
-        <div class="bind-row"><span>Forward</span><button disabled>W</button></div>
-        <div class="bind-row"><span>Back</span><button disabled>S</button></div>
-        <div class="bind-row"><span>Turn left</span><button disabled>A</button></div>
-        <div class="bind-row"><span>Turn right</span><button disabled>D</button></div>
-        <div class="bind-row"><span>Jump</span><button disabled>Space</button></div>
-        <div class="bind-row"><span>Build</span><button disabled>1</button></div>
-        <div class="bind-row"><span>Interact</span><button disabled>E</button></div>
-        <div class="bind-row"><span>Zoom</span><button disabled>Wheel</button></div>
-        <div class="bind-row"><span>Steer move</span><button disabled>Right mouse</button></div>
-        <div class="bind-row"><span>Orbit view</span><button disabled>Left mouse</button></div>
-      </details>
+      <section class="right-menu">
+        <details class="keybind-panel">
+          <summary>Bindings</summary>
+          <div class="bind-row"><span>Forward</span><button disabled>W</button></div>
+          <div class="bind-row"><span>Back</span><button disabled>S</button></div>
+          <div class="bind-row"><span>Turn left</span><button disabled>A</button></div>
+          <div class="bind-row"><span>Turn right</span><button disabled>D</button></div>
+          <div class="bind-row"><span>Jump</span><button disabled>Space</button></div>
+          <div class="bind-row"><span>Build</span><button disabled>1</button></div>
+          <div class="bind-row"><span>Interact</span><button disabled>E</button></div>
+          <div class="bind-row"><span>Zoom</span><button disabled>Wheel</button></div>
+          <div class="bind-row"><span>Steer move</span><button disabled>Right mouse</button></div>
+          <div class="bind-row"><span>Orbit view</span><button disabled>Left mouse</button></div>
+        </details>
+        <details class="manual-panel">
+          <summary>Manual</summary>
+          <div class="manual-tabs">
+            <button class="active" data-manual-tab="start">Start</button>
+            <button data-manual-tab="ai">AI</button>
+            <button data-manual-tab="lmstudio">LM Studio</button>
+            <button data-manual-tab="config">Config</button>
+            <button data-manual-tab="rules">Rules</button>
+          </div>
+          <div class="manual-section active" data-manual-section="start">
+            <h2>Start</h2>
+            <p>Run <code>npm run dev</code> from the project root. Open the local URL printed by Vite.</p>
+          </div>
+          <div class="manual-section" data-manual-section="ai">
+            <h2>AI Flow</h2>
+            <p>Agents observe the world, receive a prompt, propose one JSON action, and the engine validates it before applying anything.</p>
+          </div>
+          <div class="manual-section" data-manual-section="lmstudio">
+            <h2>LM Studio</h2>
+            <p>Start LM Studio's local server at <code>http://localhost:1234/v1</code>. The app calls <code>/chat/completions</code>.</p>
+          </div>
+          <div class="manual-section" data-manual-section="config">
+            <h2>Config</h2>
+            <p>Default provider is OpenAI-compatible. Set <code>tron-world:llm-model</code> in localStorage to the loaded LM Studio model name, then refresh.</p>
+          </div>
+          <div class="manual-section" data-manual-section="rules">
+            <h2>Rules</h2>
+            <p>The model cannot mutate the world, teleport, invent actions, control cameras, or decide success. Invalid output falls back safely.</p>
+          </div>
+        </details>
+      </section>
       <section class="status-stack">
         <div data-context-line></div>
         <div data-status-line>Create an avatar to begin.</div>
@@ -222,6 +254,7 @@ export class UIController {
     this.bindCreatePanel();
     this.bindHud();
     this.bindBuildPanel();
+    this.bindManualPanel();
     this.releaseControlsAfterPointerUse();
     this.refreshBuildPanel();
     this.setCameraMode(this.cameraMode);
@@ -519,6 +552,21 @@ export class UIController {
     });
     this.transferInput.addEventListener('input', () => {
       this.transferCap = Math.max(0, Number(this.transferInput.value) || 0);
+    });
+  }
+
+  private bindManualPanel(): void {
+    const tabs = [...this.root.querySelectorAll<HTMLButtonElement>('[data-manual-tab]')];
+    const sections = [...this.root.querySelectorAll<HTMLElement>('[data-manual-section]')];
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const key = tab.dataset.manualTab;
+        tabs.forEach((entry) => entry.classList.toggle('active', entry === tab));
+        sections.forEach((section) => {
+          section.classList.toggle('active', section.dataset.manualSection === key);
+        });
+      });
     });
   }
 

@@ -515,11 +515,18 @@ input[type="range"] {
   text-shadow: 0 0 12px rgba(0, 255, 136, 0.22);
 }
 
-.keybind-panel {
+.right-menu {
   position: absolute;
   right: 14px;
   top: 118px;
   width: 226px;
+  display: grid;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.keybind-panel,
+.manual-panel {
   border: 1px solid rgba(136, 255, 255, 0.24);
   background: rgba(2, 6, 16, 0.68);
   padding: 8px 10px;
@@ -530,7 +537,8 @@ input[type="range"] {
     0 0 48px rgba(136, 255, 255, 0.06);
 }
 
-.keybind-panel summary {
+.keybind-panel summary,
+.manual-panel summary {
   cursor: pointer;
   color: #f5fff7;
 }
@@ -551,6 +559,53 @@ input[type="range"] {
   background: rgba(6, 18, 32, 0.76);
   color: rgba(221, 255, 255, 0.72);
   box-shadow: inset 0 0 14px rgba(136, 255, 255, 0.06);
+}
+
+.manual-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.manual-tabs button {
+  min-height: 28px;
+  border: 1px solid rgba(136, 255, 255, 0.22);
+  background: rgba(6, 18, 32, 0.76);
+  color: rgba(221, 255, 255, 0.72);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.manual-tabs button.active {
+  border-color: #00ff88;
+  color: #f5fff7;
+  box-shadow: inset 0 0 14px rgba(0, 255, 136, 0.12);
+}
+
+.manual-section {
+  display: none;
+  margin-top: 9px;
+  color: rgba(221, 255, 255, 0.78);
+  line-height: 1.35;
+}
+
+.manual-section.active {
+  display: block;
+}
+
+.manual-section h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #f5fff7;
+}
+
+.manual-section p {
+  margin: 0;
+}
+
+.manual-section code {
+  color: #00ff88;
 }
 
 @media (max-width: 760px) {
@@ -586,7 +641,7 @@ input[type="range"] {
     grid-template-columns: 1fr 1fr;
   }
 
-  .keybind-panel {
+  .right-menu {
     top: auto;
     right: 14px;
     bottom: 84px;
