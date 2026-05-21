@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { Chunk } from '../world/types';
 import {
   AvatarState,
+  AvatarInteractionEffect,
   BlockShape,
   BLOCK_DEFINITIONS,
   CameraMode,
@@ -56,10 +57,19 @@ type VisualEntry = {
   signature: string;
 };
 
+type InteractionVisual = {
+  group: THREE.Group;
+  line: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+  sourcePulse: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>;
+  targetPulse: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>;
+};
+
 const BACKGROUND_COLOR = 0x020610;
 const CAMERA_HEIGHT = 1.62;
 const WORLD_GRID_SPAN = 4096;
 const WORLD_GRID_MAJOR_STEP = 4;
+const LOOK_RAYCAST_FAR = 24;
+const BUILD_RAYCAST_FAR = 80;
 export const THIRD_PERSON_MIN_ZOOM = 1.08;
 export const THIRD_PERSON_DEFAULT_ZOOM = 5.4;
 export const THIRD_PERSON_MAX_ZOOM = 10.5;
@@ -77,10 +87,13 @@ export class WorldRenderer {
   private readonly blockGroups = new Map<string, THREE.Group>();
   private readonly teslaGroups = new Map<string, VisualEntry>();
   private readonly avatarGroups = new Map<string, AvatarVisual>();
+  private readonly interactionGroups = new Map<string, InteractionVisual>();
   private readonly ghostRoot = new THREE.Group();
+  private readonly deleteGhostRoot = new THREE.Group();
   private readonly avatarFillLight = new THREE.PointLight(0x00ff88, 0.5, 7);
   private readonly groundPlane: THREE.Mesh;
   private ghostShape?: BlockShape;
+  private deleteGhostShape?: BlockShape;
 
   constructor(container: HTMLElement) {
     this.scene.background = new THREE.Color(BACKGROUND_COLOR);
@@ -123,7 +136,9 @@ export class WorldRenderer {
     this.scene.add(this.avatarFillLight);
 
     this.ghostRoot.visible = false;
+    this.deleteGhostRoot.visible = false;
     this.scene.add(this.ghostRoot);
+    this.scene.add(this.deleteGhostRoot);
 
     window.addEventListener('resize', () => this.resize());
   }
@@ -151,10 +166,14 @@ export class WorldRenderer {
     for (const [id, visual] of this.avatarGroups) {
       const avatar = world.avatars.get(id);
       if (avatar) {
-        visual.update(avatar, time, mode === 'avatar_pov' && selected?.id === id, glowSettings.avatar);
+        const hasActiveController =
+          glowSettings.avatar.activeAiAvatarIds?.has(id) === true ||
+          (selected?.id === id && world.isAvatarControllable(id));
+        visual.update(avatar, time, mode === 'avatar_pov' && selected?.id === id, glowSettings.avatar, hasActiveController);
       }
     }
 
+    this.syncAvatarInteractionEffects(world);
     this.composer.render();
   }
 
@@ -171,7 +190,7 @@ export class WorldRenderer {
     avatarId?: string,
     pointerNdc = new THREE.Vector2(0, 0),
   ): PlacementCandidate | undefined {
-    const target = this.raycastAt(world, avatarId, pointerNdc);
+    const target = this.raycastAt(world, avatarId, pointerNdc, BUILD_RAYCAST_FAR);
 
     if (!target || target.kind === 'avatar') {
       return undefined;
@@ -211,8 +230,17 @@ export class WorldRenderer {
     };
   }
 
-  getLookTarget(world: WorldState, avatarId?: string, pointerNdc = new THREE.Vector2(0, 0)): RaycastTarget | undefined {
-    return this.raycastAt(world, avatarId, pointerNdc);
+  getLookTarget(world: WorldState, avatarId?: string, pointerNdc = new THREE.Vector2(0, 0), far = LOOK_RAYCAST_FAR): RaycastTarget | undefined {
+    return this.raycastAt(world, avatarId, pointerNdc, far);
+  }
+
+  worldToScreen(point: Vec3): { x: number; y: number; visible: boolean } {
+    const projected = new THREE.Vector3(point.x, point.y, point.z).project(this.camera);
+    return {
+      x: (projected.x * 0.5 + 0.5) * window.innerWidth,
+      y: (-projected.y * 0.5 + 0.5) * window.innerHeight,
+      visible: projected.z >= -1 && projected.z <= 1,
+    };
   }
 
   updateGhost(candidate: PlacementCandidate | undefined, valid: boolean): void {
@@ -232,6 +260,42 @@ export class WorldRenderer {
     this.ghostRoot.position.set(candidate.position.x, candidate.shape === 'tesla_node' ? 0 : candidate.position.y, candidate.position.z);
     this.ghostRoot.rotation.y = THREE.MathUtils.degToRad(candidate.rotation);
     updateGhostVisual(this.ghostRoot, valid);
+  }
+
+  updateDeleteGhost(world: WorldState, target: RaycastTarget | undefined): void {
+    if (!target || !target.id || (target.kind !== 'block' && target.kind !== 'tesla_node')) {
+      this.deleteGhostRoot.visible = false;
+      return;
+    }
+
+    const block = target.kind === 'block' ? world.blocks.get(target.id) : undefined;
+    const node = target.kind === 'tesla_node' ? world.teslaNodes.get(target.id) : undefined;
+
+    if (!block && (!node || node.starting)) {
+      this.deleteGhostRoot.visible = false;
+      return;
+    }
+
+    const shape = block?.shape ?? 'tesla_node';
+    const rotation = block?.rotation ?? 0;
+    const position = block?.position ?? node?.position;
+
+    if (!position) {
+      this.deleteGhostRoot.visible = false;
+      return;
+    }
+
+    if (this.deleteGhostShape !== shape) {
+      this.deleteGhostRoot.clear();
+      this.deleteGhostRoot.add(createGhostVisual(shape));
+      this.deleteGhostShape = shape;
+    }
+
+    this.deleteGhostRoot.visible = true;
+    this.deleteGhostRoot.position.set(position.x, shape === 'tesla_node' ? 0 : position.y + (shape === 'tile' ? 0.018 : 0), position.z);
+    this.deleteGhostRoot.rotation.y = THREE.MathUtils.degToRad(rotation);
+    this.deleteGhostRoot.scale.setScalar(1.025);
+    updateGhostVisual(this.deleteGhostRoot, 'delete');
   }
 
   private syncChunks(chunks: Chunk[]): void {
@@ -329,6 +393,96 @@ export class WorldRenderer {
 
       visual.group.visible = !(mode === 'avatar_pov' && selected?.id === avatar.id);
     }
+  }
+
+  private syncAvatarInteractionEffects(world: WorldState): void {
+    const activeEffects = world.activeAvatarInteractionEffects();
+    const activeIds = new Set(activeEffects.map((effect) => effect.id));
+
+    for (const [id, visual] of this.interactionGroups) {
+      if (!activeIds.has(id)) {
+        this.scene.remove(visual.group);
+        disposeObject(visual.group);
+        this.interactionGroups.delete(id);
+      }
+    }
+
+    for (const effect of activeEffects) {
+      const source = world.avatars.get(effect.sourceAvatarId);
+      const target = world.avatars.get(effect.targetAvatarId);
+
+      if (!source || !target) {
+        continue;
+      }
+
+      let visual = this.interactionGroups.get(effect.id);
+      if (!visual) {
+        visual = this.createInteractionVisual(effect);
+        this.interactionGroups.set(effect.id, visual);
+        this.scene.add(visual.group);
+      }
+
+      this.updateInteractionVisual(visual, effect, source, target, world.elapsed);
+    }
+  }
+
+  private createInteractionVisual(_effect: AvatarInteractionEffect): InteractionVisual {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3));
+    const lineMaterial = new THREE.LineBasicMaterial({
+      color: 0x44f2ff,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
+    lineMaterial.toneMapped = false;
+
+    const line = new THREE.Line(geometry, lineMaterial);
+    const pulseMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ff88,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    pulseMaterial.toneMapped = false;
+
+    const sourcePulse = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.01, 8, 40), pulseMaterial.clone());
+    const targetPulse = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.01, 8, 40), pulseMaterial.clone());
+    sourcePulse.rotation.x = Math.PI / 2;
+    targetPulse.rotation.x = Math.PI / 2;
+
+    const group = new THREE.Group();
+    group.userData.ignoreRaycast = true;
+    group.add(line, sourcePulse, targetPulse);
+
+    return { group, line, sourcePulse, targetPulse };
+  }
+
+  private updateInteractionVisual(
+    visual: InteractionVisual,
+    effect: AvatarInteractionEffect,
+    source: AvatarState,
+    target: AvatarState,
+    elapsed: number,
+  ): void {
+    const progress = THREE.MathUtils.clamp((elapsed - effect.startedAt) / effect.duration, 0, 1);
+    const pulse = Math.sin(progress * Math.PI);
+    const sourcePoint = new THREE.Vector3(source.position.x, source.position.y + 1.12, source.position.z);
+    const targetPoint = new THREE.Vector3(target.position.x, target.position.y + 1.12, target.position.z);
+    const linePositions = visual.line.geometry.getAttribute('position') as THREE.BufferAttribute;
+
+    linePositions.setXYZ(0, sourcePoint.x, sourcePoint.y, sourcePoint.z);
+    linePositions.setXYZ(1, targetPoint.x, targetPoint.y, targetPoint.z);
+    linePositions.needsUpdate = true;
+
+    visual.line.material.opacity = 0.18 + pulse * 0.72;
+    visual.sourcePulse.position.copy(sourcePoint);
+    visual.targetPulse.position.copy(targetPoint);
+    visual.sourcePulse.scale.setScalar(0.8 + progress * 1.45);
+    visual.targetPulse.scale.setScalar(0.8 + progress * 1.45);
+    visual.sourcePulse.material.opacity = pulse * 0.72;
+    visual.targetPulse.material.opacity = pulse * 0.72;
   }
 
   private createChunkGroup(chunk: Chunk): THREE.Group {
@@ -478,9 +632,9 @@ export class WorldRenderer {
     this.avatarFillLight.position.lerp(lightPosition, 0.35);
   }
 
-  private raycastAt(world: WorldState, avatarId: string | undefined, pointerNdc: THREE.Vector2): RaycastTarget | undefined {
+  private raycastAt(world: WorldState, avatarId: string | undefined, pointerNdc: THREE.Vector2, far: number): RaycastTarget | undefined {
     this.raycaster.setFromCamera(pointerNdc, this.camera);
-    this.raycaster.far = 24;
+    this.raycaster.far = far;
     const objects = this.getRaycastObjects();
     const hits = this.raycaster.intersectObjects(objects, true);
 

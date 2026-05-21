@@ -4,7 +4,6 @@ import {
   BlockRotation,
   BlockShape,
   BLOCK_DEFINITIONS,
-  clamp,
   distance2D,
   PlacementCandidate,
   Vec3,
@@ -69,8 +68,15 @@ export type ActionResult = {
   message: string;
 };
 
+type ActionSystemCallbacks = {
+  onBuildPlaced?: (event: { avatarId: string; position: Vec3; kind: 'block' | 'tesla_node' }) => void;
+};
+
 export class ActionSystem {
-  constructor(private readonly world: WorldState) {}
+  constructor(
+    private readonly world: WorldState,
+    private readonly callbacks: ActionSystemCallbacks = {},
+  ) {}
 
   apply(action: ActionRequest): ActionResult {
     const avatar = this.world.avatars.get(action.avatarId);
@@ -100,13 +106,15 @@ export class ActionSystem {
       case 'transfer_energy':
         return this.transferEnergy(avatar, action.targetAvatarId, action.amount);
       case 'recharge':
-        return { ok: true, message: 'Recharge is automatic inside active Tesla fields.' };
+        return this.recharge(avatar);
       case 'move_forward':
       case 'move_backward':
       case 'move_left':
       case 'move_right':
+        return this.movement(avatar, action.type);
       case 'jump':
       case 'move_toward':
+        return this.movement(avatar, action.type);
       case 'wait':
         return { ok: true, message: `${action.type} validated.` };
       default:
@@ -173,16 +181,14 @@ export class ActionSystem {
 
     if (!validation.ok) {
       avatar.recentFailure = validation.message;
-      avatar.motivators.focus = clamp(avatar.motivators.focus - 5, 0, 100);
       return validation;
     }
 
     this.world.changeEnergy(avatar, -BLOCK_DEFINITIONS[action.shape].energyCost);
     this.world.placeBlock(candidate, avatar.id);
-    avatar.motivators.focus = clamp(avatar.motivators.focus + 5, 0, 100);
-    avatar.motivators.purpose = clamp(avatar.motivators.purpose + 8, 0, 100);
     avatar.recentDecision = `Placed a ${BLOCK_DEFINITIONS[action.shape].label}.`;
     avatar.intendedNextStep = 'Continue building or recharge near a Tesla Node.';
+    this.callbacks.onBuildPlaced?.({ avatarId: avatar.id, position: candidate.position, kind: 'block' });
 
     return { ok: true, message: 'Block placed.' };
   }
@@ -210,7 +216,6 @@ export class ActionSystem {
 
     if (!validation.ok) {
       avatar.recentFailure = validation.message;
-      avatar.motivators.focus = clamp(avatar.motivators.focus - 5, 0, 100);
       return validation;
     }
 
@@ -225,9 +230,9 @@ export class ActionSystem {
 
     this.world.changeEnergy(avatar, -contribution);
     this.world.createTeslaNode(candidate, avatar.id, contribution);
-    avatar.motivators.purpose = clamp(avatar.motivators.purpose + 30, 0, 100);
     avatar.recentDecision = 'Started a Tesla Node build.';
     avatar.intendedNextStep = 'Recharge, then continue contributing Energy.';
+    this.callbacks.onBuildPlaced?.({ avatarId: avatar.id, position: candidate.position, kind: 'tesla_node' });
 
     return { ok: true, message: 'Tesla Node started.' };
   }
@@ -240,7 +245,6 @@ export class ActionSystem {
       return { ok: false, message: 'Could not contribute Energy.' };
     }
 
-    avatar.motivators.purpose = clamp(avatar.motivators.purpose + 2, 0, 100);
     return { ok: true, message: `Contributed ${spent.toFixed(1)} Energy.` };
   }
 
@@ -252,6 +256,19 @@ export class ActionSystem {
 
     if (avatar.energy < WORLD_RULES.normalBlockCost) {
       return { ok: false, message: 'Not enough Energy.' };
+    }
+
+    const targetPosition =
+      action.targetKind === 'tesla_node'
+        ? this.world.teslaNodes.get(action.targetId)?.position
+        : this.world.blocks.get(action.targetId)?.position;
+
+    if (!targetPosition) {
+      return { ok: false, message: action.targetKind === 'tesla_node' ? 'No removable Tesla Node targeted.' : 'No removable block targeted.' };
+    }
+
+    if (distance2D(avatar.position, targetPosition) > WORLD_RULES.buildReach) {
+      return { ok: false, message: 'Target too far away.' };
     }
 
     if (action.targetKind === 'tesla_node') {
@@ -267,7 +284,6 @@ export class ActionSystem {
     }
 
     this.world.changeEnergy(avatar, -WORLD_RULES.normalBlockCost);
-    avatar.motivators.purpose = clamp(avatar.motivators.purpose + 6, 0, 100);
     avatar.recentDecision = 'Removed a world object.';
     return { ok: true, message: 'Removed target.' };
   }
@@ -278,8 +294,6 @@ export class ActionSystem {
     }
 
     this.world.changeEnergy(avatar, -WORLD_RULES.scanCost);
-    avatar.motivators.curiosity = clamp(avatar.motivators.curiosity + 10, 0, 100);
-    avatar.motivators.focus = clamp(avatar.motivators.focus + 5, 0, 100);
     avatar.recentDecision = 'Performed an active scan.';
     avatar.intendedNextStep = 'Use scan results to choose a nearby build or movement target.';
     this.world.lastMessage = 'Scan complete: local structures, Tesla Nodes, avatars, and open grid checked.';
@@ -301,18 +315,19 @@ export class ActionSystem {
     }
 
     this.world.changeEnergy(avatar, -WORLD_RULES.handshakeCost);
-    avatar.motivators.connection = clamp(avatar.motivators.connection + 25, 0, 100);
-    target.motivators.connection = clamp(target.motivators.connection + 25, 0, 100);
     avatar.recentDecision = `Handshake with ${target.name}.`;
+    target.recentDecision = `Handshake with ${avatar.name}.`;
+    avatar.attentionTarget = { type: 'agent', id: target.id };
+    target.attentionTarget = { type: 'agent', id: avatar.id };
+    this.world.recordHandshake(avatar.id, target.id);
     this.world.lastMessage = 'Handshake complete.';
     return { ok: true, message: 'Handshake complete.' };
   }
 
   private recalibrate(avatar: AvatarState): ActionResult {
-    avatar.motivators.focus = clamp(avatar.motivators.focus + WORLD_RULES.recalibrateFocusGain, 0, 100);
     avatar.recentDecision = 'Recalibrated using current goal, recent decision, movement direction, and intended next step.';
     avatar.intendedNextStep = avatar.intendedNextStep || 'Resume the current plan.';
-    this.world.lastMessage = 'Recalibration restored Focus by re-centering the avatar context.';
+    this.world.lastMessage = 'Recalibration re-centered the avatar context.';
     return { ok: true, message: 'Recalibrated.' };
   }
 
@@ -338,9 +353,30 @@ export class ActionSystem {
 
     this.world.changeEnergy(avatar, -transfer);
     this.world.changeEnergy(target, transfer);
-    avatar.motivators.connection = clamp(avatar.motivators.connection + 20, 0, 100);
     avatar.recentDecision = `Transferred Energy to ${target.name}.`;
     this.world.lastMessage = `Transferred ${transfer} Energy.`;
     return { ok: true, message: 'Energy transferred.' };
+  }
+
+  private recharge(avatar: AvatarState): ActionResult {
+    const field = this.world.getTeslaFieldEffectAt(avatar.position);
+
+    if (avatar.energy >= WORLD_RULES.maxEnergy - 1) {
+      return { ok: false, message: 'Energy is already full. Choose build, explore, connect, scan, or recalibrate.' };
+    }
+
+    if (field <= 0) {
+      return { ok: false, message: 'No active recharge field here. Move toward an active Tesla Node first.' };
+    }
+
+    avatar.recentDecision = 'Holding inside Tesla field to recharge.';
+    avatar.intendedNextStep = 'Leave the field once Energy is high enough.';
+    return { ok: true, message: 'Recharging in Tesla field.' };
+  }
+
+  private movement(avatar: AvatarState, action: string): ActionResult {
+    avatar.recentDecision = `${action} accepted.`;
+    avatar.intendedNextStep = 'Use the new position to build, scan, connect, or recharge.';
+    return { ok: true, message: `${action} validated.` };
   }
 }

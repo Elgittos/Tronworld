@@ -44,7 +44,7 @@ export class ActionValidator {
       case 'move_left':
       case 'move_right':
       case 'jump':
-        return { accepted: true, appliedAction: action, movement: { action: action.action } };
+        return { accepted: true, appliedAction: action, actionRequest: { type: action.action, avatarId: agent.id }, movement: { action: action.action } };
       case 'move_toward':
         return this.validateMoveToward(action, agent);
       case 'place_block':
@@ -60,7 +60,7 @@ export class ActionValidator {
       case 'recalibrate':
         return { accepted: true, appliedAction: action, actionRequest: { type: 'recalibrate', avatarId: agent.id } };
       case 'recharge':
-        return { accepted: true, appliedAction: action, actionRequest: { type: 'recharge', avatarId: agent.id } };
+        return this.validateRecharge(action, agent);
       case 'transfer_energy':
         return this.validateTransfer(action, agent);
       case 'build_tesla_node':
@@ -84,13 +84,72 @@ export class ActionValidator {
     const before = this.world.avatars.get(validated.actionRequest.avatarId)?.energy;
     const result = this.actionSystem.apply(validated.actionRequest);
     const after = this.world.avatars.get(validated.actionRequest.avatarId)?.energy;
+    const avatar = this.world.avatars.get(validated.actionRequest.avatarId);
 
     return {
       accepted: result.ok,
-      reason: result.message,
+      reason: result.ok && avatar && validated.actionRequest.type === 'scan' ? this.scanSummary(avatar) : result.message,
       appliedAction: validated.appliedAction,
       energyDelta: before !== undefined && after !== undefined ? after - before : undefined,
     };
+  }
+
+  private scanSummary(agent: AvatarState): string {
+    const scanRadius = 12;
+    const nearbyBlocks = [...this.world.blocks.values()].filter((block) => distance2D(agent.position, block.position) <= scanRadius);
+    const nearbyNodes = [...this.world.teslaNodes.values()]
+      .filter((node) => distance2D(agent.position, node.position) <= scanRadius)
+      .map((node) => `${node.active ? 'active' : 'unfinished'}${node.interference ? ' interference' : ''} Tesla Node at x:${node.position.x.toFixed(1)} z:${node.position.z.toFixed(1)}`);
+    const nearbyAgents = [...this.world.avatars.values()].filter(
+      (avatar) => avatar.id !== agent.id && !avatar.shutdown && distance2D(agent.position, avatar.position) <= scanRadius,
+    );
+    const openDirections = this.openDirections(agent);
+    const buildTargets = this.nearbyBuildTargets(agent);
+    const field = this.world.getTeslaFieldEffectAt(agent.position);
+    const fieldText = field > 0 ? 'inside safe recharge field' : field < 0 ? 'inside draining interference field' : 'outside recharge field';
+
+    return [
+      `Scan found ${nearbyBlocks.length} nearby blocks, ${nearbyAgents.length} nearby avatars, ${nearbyNodes.length} nearby Tesla Nodes`,
+      `field: ${fieldText}`,
+      `open: ${openDirections.join(', ') || 'none obvious'}`,
+      `build targets: ${buildTargets.join(' | ') || 'none in reach'}`,
+      nearbyNodes.length ? `nodes: ${nearbyNodes.join(' | ')}` : 'next: move, build, or approach a visible target',
+    ].join('. ');
+  }
+
+  private openDirections(agent: AvatarState): string[] {
+    const directions = [
+      ['north', { x: agent.position.x, y: 0, z: agent.position.z + 2 }],
+      ['south', { x: agent.position.x, y: 0, z: agent.position.z - 2 }],
+      ['east', { x: agent.position.x + 2, y: 0, z: agent.position.z }],
+      ['west', { x: agent.position.x - 2, y: 0, z: agent.position.z }],
+    ] as const;
+
+    return directions
+      .filter(([, position]) => ![...this.world.blocks.values()].some((block) => distance2D(block.position, position) <= 0.9))
+      .map(([name]) => name);
+  }
+
+  private nearbyBuildTargets(agent: AvatarState): string[] {
+    const targets = [
+      { x: agent.position.x + 1, y: 0, z: agent.position.z },
+      { x: agent.position.x, y: 0, z: agent.position.z + 1 },
+      { x: agent.position.x - 1, y: 0, z: agent.position.z },
+      { x: agent.position.x, y: 0, z: agent.position.z - 1 },
+    ];
+
+    return targets
+      .map((position) => ({
+        x: Math.floor(position.x) + 0.5,
+        y: 0,
+        z: Math.floor(position.z) + 0.5,
+      }))
+      .filter((position) =>
+        this.actionSystem.validatePlacement(this.floorCandidate('tile', position, 0, agent.color), agent.id).ok ||
+        this.actionSystem.validatePlacement(this.floorCandidate('cube', position, 0, agent.color), agent.id).ok,
+      )
+      .slice(0, 4)
+      .map((position) => `x:${position.x.toFixed(1)} y:0 z:${position.z.toFixed(1)}`);
   }
 
   private validateMoveToward(action: Extract<AgentAction, { action: 'move_toward' }>, agent: AvatarState): ValidatedAgentAction {
@@ -102,10 +161,19 @@ export class ActionValidator {
       return this.reject(action, 'Target is too far beyond local navigation range.');
     }
 
-    return { accepted: true, appliedAction: action, movement: { action: 'move_toward', target: action.target } };
+    return {
+      accepted: true,
+      appliedAction: action,
+      actionRequest: { type: 'move_toward', avatarId: agent.id, target: action.target },
+      movement: { action: 'move_toward', target: action.target },
+    };
   }
 
   private validatePlaceBlock(action: Extract<AgentAction, { action: 'place_block' }>, agent: AvatarState): ValidatedAgentAction {
+    if (action.shape !== 'cube' && action.shape !== 'tile') {
+      return this.reject(action, 'Only Square and Tile blocks are enabled right now.');
+    }
+
     if (!(action.shape in BLOCK_DEFINITIONS)) {
       return this.reject(action, 'Invalid block shape.');
     }
@@ -175,6 +243,18 @@ export class ActionValidator {
       return this.reject(action, 'Not enough Energy to handshake.');
     }
     return { accepted: true, appliedAction: action, actionRequest: { type: 'handshake', avatarId: agent.id, targetAvatarId: target.id } };
+  }
+
+  private validateRecharge(action: Extract<AgentAction, { action: 'recharge' }>, agent: AvatarState): ValidatedAgentAction {
+    if (agent.energy >= WORLD_RULES.maxEnergy - 1) {
+      return this.reject(action, 'Energy is already full. Recharge would waste this turn.');
+    }
+
+    if (this.world.getTeslaFieldEffectAt(agent.position) <= 0) {
+      return this.reject(action, 'No active Tesla recharge field at current position.');
+    }
+
+    return { accepted: true, appliedAction: action, actionRequest: { type: 'recharge', avatarId: agent.id } };
   }
 
   private validateTransfer(action: Extract<AgentAction, { action: 'transfer_energy' }>, agent: AvatarState): ValidatedAgentAction {

@@ -5,11 +5,14 @@ export class AmbientAudio {
   private readonly audio = new Audio();
   private trackIndex = 0;
   private started = false;
+  private duckStrength = 0;
+  private targetDuckStrength = 0;
+  private lastDuckUpdate = performance.now();
 
   constructor(private readonly tracks: string[]) {
     this.audio.preload = 'auto';
     this.audio.loop = false;
-    this.audio.volume = this.volume;
+    this.applyVolume();
     this.audio.addEventListener('ended', () => this.playNext());
   }
 
@@ -41,7 +44,19 @@ export class AmbientAudio {
 
   setVolume(value: number): void {
     this.volume = Math.min(1, Math.max(0, value));
-    this.audio.volume = this.volume;
+    this.applyVolume();
+  }
+
+  setTeslaDucking(strength: number): void {
+    this.targetDuckStrength = Math.min(1, Math.max(0, strength));
+    const now = performance.now();
+    const dt = Math.min(0.12, Math.max(0, (now - this.lastDuckUpdate) / 1000));
+    this.lastDuckUpdate = now;
+
+    const rate = this.targetDuckStrength > this.duckStrength ? 2.8 : 1.35;
+    const alpha = 1 - Math.exp(-rate * dt);
+    this.duckStrength += (this.targetDuckStrength - this.duckStrength) * alpha;
+    this.applyVolume();
   }
 
   private playNext(): void {
@@ -57,5 +72,10 @@ export class AmbientAudio {
   private loadTrack(index: number): void {
     this.audio.src = this.tracks[index];
     this.audio.load();
+  }
+
+  private applyVolume(): void {
+    const duckMultiplier = 1 - this.duckStrength * 0.96;
+    this.audio.volume = Math.min(1, Math.max(0, this.volume * duckMultiplier));
   }
 }

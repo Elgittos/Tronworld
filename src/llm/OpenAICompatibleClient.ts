@@ -1,5 +1,5 @@
 import { LLMClient, LLMCompletionResult, LLMMessage } from './LLMClient';
-import { DEFAULT_LM_STUDIO_CONFIG, LLMProviderConfig } from './LLMProviderConfig';
+import { DEFAULT_LM_STUDIO_CONFIG, LLMProviderConfig, normalizeLlmBaseUrl } from './LLMProviderConfig';
 
 type ChatCompletionResponse = {
   choices?: Array<{
@@ -20,7 +20,7 @@ export class OpenAICompatibleClient implements LLMClient {
   }
 
   async completeChat(messages: LLMMessage[]): Promise<LLMCompletionResult> {
-    const baseUrl = (this.config.baseUrl ?? DEFAULT_LM_STUDIO_CONFIG.baseUrl ?? '').replace(/\/+$/, '');
+    const baseUrl = normalizeLlmBaseUrl(this.config.baseUrl, 'openai-compatible');
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), this.config.timeoutMs ?? 12000);
 

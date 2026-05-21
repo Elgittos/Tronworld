@@ -3,9 +3,9 @@ import { AvatarState } from '../world/types';
 import { applyRaycastMeta, createSoftGlowTexture } from './geometry';
 
 const WHITE_REACTOR = 0xf5fff7;
-const ORANGE_REACTOR = 0xff8a1f;
 const RED_REACTOR = 0xff0000;
 const SHUTDOWN_GREY = 0x555d64;
+const INACTIVE_REACTOR = 0x4f555b;
 const DARK_BODY = 0x0a1628;
 const DARKER_SHUTDOWN_BODY = 0x111416;
 const FOOT_OFFSET = 0.675;
@@ -28,13 +28,14 @@ export type AvatarGlowSettings = {
   reactorBloom: number;
   eyes: number;
   eyesBloom: number;
+  activeAiAvatarIds?: ReadonlySet<string>;
 };
 
 function sliderFactor(value: number): number {
   return THREE.MathUtils.clamp(value, 0, 100) / 100;
 }
 
-function getEnergyVisualState(avatar: AvatarState): EnergyVisualState {
+function getEnergyVisualState(avatar: AvatarState, controllerActive: boolean): EnergyVisualState {
   const tint = new THREE.Color(avatar.color).getHex();
 
   if (avatar.shutdown) {
@@ -51,7 +52,21 @@ function getEnergyVisualState(avatar: AvatarState): EnergyVisualState {
     };
   }
 
-  const reactor = avatar.energy > 65 ? WHITE_REACTOR : avatar.energy > 25 ? ORANGE_REACTOR : RED_REACTOR;
+  if (!controllerActive) {
+    return {
+      reactor: INACTIVE_REACTOR,
+      body: DARK_BODY,
+      bodyGlow: SHUTDOWN_GREY,
+      bodyGlowIntensity: 0.008,
+      edge: tint,
+      edgeOpacity: 0.24,
+      eyes: SHUTDOWN_GREY,
+      eyeIntensity: 0,
+      active: false,
+    };
+  }
+
+  const reactor = avatar.energy > 25 ? WHITE_REACTOR : RED_REACTOR;
 
   return {
     reactor,
@@ -71,9 +86,13 @@ export class AvatarVisual {
 
   private readonly bodyMat: THREE.MeshPhysicalMaterial;
   private readonly eyeMat: THREE.MeshStandardMaterial;
-  private readonly ringMat: THREE.MeshStandardMaterial;
+  private readonly ringMat: THREE.MeshBasicMaterial;
   private readonly glowSpriteMat: THREE.SpriteMaterial;
   private readonly bloomSpriteMat: THREE.SpriteMaterial;
+  private readonly bubbleCanvas = document.createElement('canvas');
+  private readonly bubbleTexture: THREE.CanvasTexture;
+  private readonly bubbleMat: THREE.SpriteMaterial;
+  private readonly bubbleSprite: THREE.Sprite;
   private readonly edgeMat: THREE.LineBasicMaterial;
   private readonly limbs: {
     leftArm: THREE.Group;
@@ -82,6 +101,8 @@ export class AvatarVisual {
     rightLeg: THREE.Group;
   };
   private readonly lastPosition = new THREE.Vector3();
+  private bubbleText = '';
+  private bubbleUntil = 0;
   private firstUpdate = true;
 
   constructor(avatar: AvatarState) {
@@ -104,16 +125,13 @@ export class AvatarVisual {
       roughness: 0,
       metalness: 1,
     });
-    this.ringMat = new THREE.MeshStandardMaterial({
+    this.ringMat = new THREE.MeshBasicMaterial({
       color: WHITE_REACTOR,
-      emissive: WHITE_REACTOR,
-      emissiveIntensity: 4.5,
-      roughness: 0.03,
-      metalness: 1,
       side: THREE.DoubleSide,
       transparent: true,
       opacity: 1,
     });
+    this.ringMat.toneMapped = false;
     this.glowSpriteMat = new THREE.SpriteMaterial({
       map: createSoftGlowTexture(),
       color: WHITE_REACTOR,
@@ -136,15 +154,28 @@ export class AvatarVisual {
       opacity: 0.42,
       depthWrite: false,
     });
+    this.bubbleCanvas.width = 256;
+    this.bubbleCanvas.height = 64;
+    this.bubbleTexture = new THREE.CanvasTexture(this.bubbleCanvas);
+    this.bubbleMat = new THREE.SpriteMaterial({
+      map: this.bubbleTexture,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
+    this.bubbleSprite = new THREE.Sprite(this.bubbleMat);
+    this.bubbleSprite.position.set(0, 1.88, 0);
+    this.bubbleSprite.scale.set(0.92, 0.23, 1);
 
     this.group.scale.setScalar(AVATAR_SCALE);
     this.buildBody();
     this.limbs = this.buildLimbs();
+    this.group.add(this.bubbleSprite);
     applyRaycastMeta(this.group, 'avatar', avatar.id);
   }
 
-  update(avatar: AvatarState, time: number, hiddenForPov: boolean, glowSettings: AvatarGlowSettings): void {
-    const visualState = getEnergyVisualState(avatar);
+  update(avatar: AvatarState, time: number, hiddenForPov: boolean, glowSettings: AvatarGlowSettings, controllerActive: boolean): void {
+    const visualState = getEnergyVisualState(avatar, controllerActive);
     const reactorGlow = sliderFactor(glowSettings.reactor);
     const reactorBloom = sliderFactor(glowSettings.reactorBloom);
     const eyeGlow = sliderFactor(glowSettings.eyes);
@@ -163,8 +194,7 @@ export class AvatarVisual {
     this.edgeMat.color.setHex(visualState.edge);
     this.edgeMat.opacity = visualState.edgeOpacity;
     this.ringMat.color.setHex(visualState.reactor);
-    this.ringMat.emissive.setHex(visualState.reactor);
-    this.ringMat.emissiveIntensity = visualState.active ? 1.2 + reactorGlow * 4.2 : 0.55 + reactorGlow * 2.4;
+    this.ringMat.opacity = visualState.active || avatar.shutdown ? 1 : 0.68;
     this.glowSpriteMat.color.setHex(visualState.reactor);
     this.bloomSpriteMat.color.setHex(visualState.reactor);
 
@@ -191,10 +221,8 @@ export class AvatarVisual {
     const beatA = Math.pow(Math.max(0, Math.sin(time * 3.6)), 6);
     const beatB = Math.pow(Math.max(0, Math.sin(time * 3.6 - 0.85)), 10) * 0.55;
     const heartbeat = Math.min(1, beatA + beatB);
-    const glowScale = visualState.active ? 0.16 + reactorBloom * 0.26 + heartbeat * 0.035 : 0.18 + reactorBloom * 0.2;
-    this.glowSpriteMat.opacity = visualState.active
-      ? 0.08 + reactorBloom * 0.54 + heartbeat * reactorBloom * 0.22
-      : 0.12 + reactorBloom * 0.54;
+    const glowScale = visualState.active ? 0.16 + reactorBloom * 0.26 + heartbeat * 0.035 : 0.18;
+    this.glowSpriteMat.opacity = visualState.active ? 0.08 + reactorBloom * 0.54 + heartbeat * reactorBloom * 0.22 : 0;
 
     const glow = this.group.getObjectByName('reactorGlow');
     if (glow) {
@@ -203,12 +231,73 @@ export class AvatarVisual {
 
     const bloom = this.group.getObjectByName('reactorBloom');
     if (bloom) {
-      const bloomScale = visualState.active ? 0.34 + reactorBloom * 0.66 + heartbeat * reactorBloom * 0.08 : 0.36 + reactorBloom * 0.42;
+      const bloomScale = visualState.active ? 0.34 + reactorBloom * 0.66 + heartbeat * reactorBloom * 0.08 : 0.36;
       bloom.scale.set(bloomScale, bloomScale, 1);
-      this.bloomSpriteMat.opacity = visualState.active
-        ? 0.015 + reactorBloom * 0.24 + heartbeat * reactorBloom * 0.08
-        : 0.035 + reactorBloom * 0.26;
+      this.bloomSpriteMat.opacity = visualState.active ? 0.015 + reactorBloom * 0.24 + heartbeat * reactorBloom * 0.08 : 0;
     }
+
+    this.updateBubble(avatar, time);
+  }
+
+  private updateBubble(avatar: AvatarState, time: number): void {
+    const nextText = this.statusBubbleText(avatar);
+    if (nextText && nextText !== this.bubbleText) {
+      this.bubbleText = nextText;
+      this.bubbleUntil = time + 4;
+      this.drawBubble(nextText);
+    }
+
+    const visible = !!this.bubbleText && (time < this.bubbleUntil || avatar.energy <= 25 || avatar.shutdown);
+    this.bubbleMat.opacity = visible ? 0.92 : 0;
+  }
+
+  private statusBubbleText(avatar: AvatarState): string {
+    if (avatar.shutdown) {
+      return 'Need help';
+    }
+    if (avatar.energy <= 25) {
+      return 'Energy low';
+    }
+
+    const decision = avatar.recentDecision.toLowerCase();
+    if (decision.includes('scan')) {
+      return 'Scanning';
+    }
+    if (decision.includes('placed') || decision.includes('build') || decision.includes('contributed')) {
+      return 'Building';
+    }
+    if (decision.includes('recharge')) {
+      return 'Recharging';
+    }
+    if (decision.includes('wait')) {
+      return 'Waiting';
+    }
+    if (avatar.control === 'ai' && !avatar.isMoving) {
+      return 'Waiting';
+    }
+    return '';
+  }
+
+  private drawBubble(text: string): void {
+    const ctx = this.bubbleCanvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+
+    ctx.clearRect(0, 0, this.bubbleCanvas.width, this.bubbleCanvas.height);
+    ctx.fillStyle = 'rgba(2, 6, 16, 0.72)';
+    ctx.strokeStyle = 'rgba(136, 255, 255, 0.62)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(12, 10, 232, 42, 10);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = '600 22px Inter, sans-serif';
+    ctx.fillStyle = '#f5fff7';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text.slice(0, 18), 128, 32);
+    this.bubbleTexture.needsUpdate = true;
   }
 
   private buildBody(): void {

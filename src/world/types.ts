@@ -8,11 +8,7 @@ export type BlockShape = 'cube' | 'half_cube' | 'ramp' | 'tile' | 'pillar' | 'te
 export type CameraMode = 'third_person' | 'avatar_pov' | 'free_camera';
 export type AgentControl = 'manual' | 'ai';
 export type BlockRotation = 0 | 90 | 180 | 270;
-
-export type MotivatorName = 'focus' | 'connection' | 'curiosity' | 'purpose';
-
-export type Motivators = Record<MotivatorName, number>;
-export type PersonalityWeights = Record<MotivatorName, number>;
+export type EyeStyle = 'normal';
 
 export type ChunkKey = `${number}:${number}`;
 
@@ -20,6 +16,15 @@ export type AttentionTarget = {
   type: 'agent' | 'avatar' | 'block' | 'structure' | 'tesla_node' | 'position' | 'area';
   id?: string;
   position?: Vec3;
+};
+
+export type AvatarInteractionEffect = {
+  id: string;
+  type: 'handshake';
+  sourceAvatarId: string;
+  targetAvatarId: string;
+  startedAt: number;
+  duration: number;
 };
 
 export type Chunk = {
@@ -37,7 +42,9 @@ export type AvatarState = {
   name: string;
   control: AgentControl;
   inhabitedByAi: boolean;
+  brainId?: string;
   color: string;
+  eyeStyle: EyeStyle;
   position: Vec3;
   yaw: number;
   pitch: number;
@@ -45,13 +52,20 @@ export type AvatarState = {
   shutdown: boolean;
   isMoving: boolean;
   grounded: boolean;
-  motivators: Motivators;
-  personality: PersonalityWeights;
+  createdAtWorldTime: number;
+  createdAtTick: number;
   currentGoal: string;
   recentDecision: string;
   intendedNextStep: string;
   recentFailure?: string;
   attentionTarget?: AttentionTarget;
+};
+
+export type BrainState = {
+  id: string;
+  avatarId: string;
+  provider: string;
+  model: string;
 };
 
 export type BlockDefinition = {
@@ -105,7 +119,7 @@ export type PlacementValidation = {
 export const BLOCK_DEFINITIONS: Record<BlockShape, BlockDefinition> = {
   cube: {
     shape: 'cube',
-    label: 'Cube',
+    label: 'Square',
     energyCost: 3,
     size: { x: 1, y: 1, z: 1 },
     canAttachToSide: true,
@@ -169,10 +183,10 @@ export const WORLD_RULES = {
   teslaNodeTargetEnergy: 180,
   minimumRevivalTransfer: 10,
   donorReserveEnergy: 10,
-  recalibrateFocusGain: 20,
   avatarWalkSpeed: 3.2,
   avatarJumpVelocity: 5.8,
   buildReach: 8,
+  maxBuildHeight: 10,
   interactReach: 4.5,
   teslaRadius: 5,
 } as const;

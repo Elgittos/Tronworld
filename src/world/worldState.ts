@@ -1,6 +1,8 @@
 import { ChunkManager } from '../chunks/chunkManager';
 import {
   AvatarState,
+  AvatarInteractionEffect,
+  BrainState,
   BlockInstance,
   BlockShape,
   BlockRotation,
@@ -8,8 +10,7 @@ import {
   clamp,
   createId,
   distance2D,
-  Motivators,
-  PersonalityWeights,
+  EyeStyle,
   PlacementCandidate,
   PlacementValidation,
   TeslaNodeState,
@@ -20,23 +21,19 @@ import {
 export type AvatarCreationOptions = {
   name: string;
   color: string;
-  personality: PersonalityWeights;
+  eyeStyle?: EyeStyle;
+  select?: boolean;
 };
 
 export type AiAvatarCreationOptions = Partial<AvatarCreationOptions> & {
   position?: Vec3;
+  provider?: string;
+  model?: string;
 };
 
 export type Bounds = {
   min: Vec3;
   max: Vec3;
-};
-
-const DEFAULT_MOTIVATORS: Motivators = {
-  focus: 78,
-  connection: 54,
-  curiosity: 66,
-  purpose: 60,
 };
 
 const WORLD_EDITS_STORAGE_KEY = 'tron-world:world-edits:v1';
@@ -65,21 +62,13 @@ function browserStorage(): Storage | undefined {
   }
 }
 
-function normalizeWeights(weights: PersonalityWeights): PersonalityWeights {
-  const total = Object.values(weights).reduce((sum, value) => sum + Math.max(0, value), 0) || 1;
-  return {
-    focus: Math.max(0, weights.focus) / total,
-    connection: Math.max(0, weights.connection) / total,
-    curiosity: Math.max(0, weights.curiosity) / total,
-    purpose: Math.max(0, weights.purpose) / total,
-  };
-}
-
 export class WorldState {
   readonly chunkManager = new ChunkManager();
   readonly avatars = new Map<string, AvatarState>();
+  readonly brains = new Map<string, BrainState>();
   readonly blocks = new Map<string, BlockInstance>();
   readonly teslaNodes = new Map<string, TeslaNodeState>();
+  readonly avatarInteractionEffects = new Map<string, AvatarInteractionEffect>();
 
   selectedAvatarId?: string;
   elapsed = 0;
@@ -98,54 +87,58 @@ export class WorldState {
       control: 'manual',
       inhabitedByAi: false,
       color: options.color,
-      position: { x: 2.5, y: 0, z: 3.5 },
+      eyeStyle: options.eyeStyle ?? 'normal',
+      position: this.findOpenAvatarSpawn({ x: 2.5, y: 0, z: 3.5 }),
       yaw: Math.PI,
       pitch: 0,
       energy: WORLD_RULES.maxEnergy,
       shutdown: false,
       isMoving: false,
       grounded: true,
-      motivators: { ...DEFAULT_MOTIVATORS },
-      personality: normalizeWeights(options.personality),
+      createdAtWorldTime: this.elapsed,
+      createdAtTick: this.tick,
       currentGoal: 'Explore the starting grid and learn the world controls.',
       recentDecision: 'Spawned near the starting Tesla Node.',
       intendedNextStep: 'Move, build, recharge, or place a Tesla Node foundation.',
     };
 
     this.avatars.set(avatar.id, avatar);
-    this.selectedAvatarId = avatar.id;
-    this.chunkManager.updateForAvatarPositions([avatar.position]);
+    if (options.select ?? true) {
+      this.selectedAvatarId = avatar.id;
+    }
+    this.chunkManager.updateForAvatarPositions([...this.avatars.values()].map((entry) => entry.position));
     this.lastMessage = `${avatar.name} entered Tron World.`;
     return avatar;
   }
 
   createAiAvatar(options: AiAvatarCreationOptions = {}): AvatarState {
+    const spawnPosition = this.findOpenAvatarSpawn(options.position ? cloneVec3(options.position) : { x: -2.5, y: 0, z: 3.5 });
     const avatar: AvatarState = {
       id: createId('agent'),
       name: options.name?.trim() || 'Tron Agent',
       control: 'ai',
       inhabitedByAi: true,
       color: options.color ?? '#44f2ff',
-      position: options.position ? cloneVec3(options.position) : { x: -2.5, y: 0, z: 3.5 },
+      eyeStyle: options.eyeStyle ?? 'normal',
+      position: spawnPosition,
       yaw: Math.PI,
       pitch: 0,
       energy: WORLD_RULES.maxEnergy,
       shutdown: false,
       isMoving: false,
       grounded: true,
-      motivators: { ...DEFAULT_MOTIVATORS },
-      personality: normalizeWeights(
-        options.personality ?? {
-          focus: 30,
-          connection: 20,
-          curiosity: 30,
-          purpose: 20,
-        },
-      ),
+      createdAtWorldTime: this.elapsed,
+      createdAtTick: this.tick,
       currentGoal: 'Stay powered, observe the nearby grid, and cooperate with other avatars.',
       recentDecision: 'AI agent spawned near the starting Tesla Node.',
       intendedNextStep: 'Observe the world, maintain Energy, and choose a validated action.',
     };
+
+    const brain = this.createBrain(avatar.id, {
+      provider: options.provider ?? 'openai-compatible',
+      model: options.model ?? 'local-model',
+    });
+    avatar.brainId = brain.id;
 
     this.avatars.set(avatar.id, avatar);
     this.chunkManager.updateForAvatarPositions([...this.avatars.values()].map((entry) => entry.position));
@@ -161,10 +154,128 @@ export class WorldState {
     return this.avatars.get(this.selectedAvatarId);
   }
 
+  selectAvatar(avatarId: string): AvatarState | undefined {
+    const avatar = this.avatars.get(avatarId);
+    if (!avatar) {
+      return undefined;
+    }
+
+    this.selectedAvatarId = avatar.id;
+    return avatar;
+  }
+
+  isAvatarControllable(avatarId: string | undefined): boolean {
+    if (!avatarId) {
+      return false;
+    }
+
+    const avatar = this.avatars.get(avatarId);
+    return !!avatar && avatar.control === 'manual' && !avatar.inhabitedByAi && !avatar.shutdown;
+  }
+
+  findOpenAvatarSpawn(preferred: Vec3): Vec3 {
+    const offsets = [
+      { x: 0, z: 0 },
+      { x: 2.2, z: 0 },
+      { x: -2.2, z: 0 },
+      { x: 0, z: 2.2 },
+      { x: 0, z: -2.2 },
+      { x: 2.2, z: 2.2 },
+      { x: -2.2, z: 2.2 },
+      { x: 2.2, z: -2.2 },
+      { x: -2.2, z: -2.2 },
+      { x: 4.4, z: 0 },
+      { x: -4.4, z: 0 },
+      { x: 0, z: 4.4 },
+      { x: 0, z: -4.4 },
+    ];
+
+    for (const offset of offsets) {
+      const candidate = { x: preferred.x + offset.x, y: preferred.y, z: preferred.z + offset.z };
+      if ([...this.avatars.values()].every((avatar) => distance2D(candidate, avatar.position) >= 1.8)) {
+        return candidate;
+      }
+    }
+
+    const count = this.avatars.size;
+    return {
+      x: preferred.x + Math.cos(count * 1.7) * 2.2,
+      y: preferred.y,
+      z: preferred.z + Math.sin(count * 1.7) * 2.2,
+    };
+  }
+
+  assignAiBrain(avatarId: string, options: { provider?: string; model?: string } = {}): BrainState | undefined {
+    const avatar = this.avatars.get(avatarId);
+    if (!avatar || avatar.shutdown) {
+      return undefined;
+    }
+
+    if (avatar.brainId) {
+      this.brains.delete(avatar.brainId);
+    }
+
+    const brain = this.createBrain(avatar.id, {
+      provider: options.provider ?? 'openai-compatible',
+      model: options.model ?? 'local-model',
+    });
+
+    avatar.control = 'ai';
+    avatar.inhabitedByAi = true;
+    avatar.brainId = brain.id;
+    avatar.currentGoal = 'Operate as an AI-occupied avatar, stay powered, and choose validated actions.';
+    avatar.recentDecision = 'AI brain assigned.';
+    avatar.intendedNextStep = 'Observe the world and choose a validated action.';
+    this.lastMessage = `${avatar.name} is now AI occupied.`;
+    return brain;
+  }
+
+  disconnectAiBrain(avatarId: string): AvatarState | undefined {
+    const avatar = this.avatars.get(avatarId);
+    if (!avatar || avatar.control !== 'ai') {
+      return undefined;
+    }
+
+    if (avatar.brainId) {
+      this.brains.delete(avatar.brainId);
+    }
+
+    avatar.control = 'manual';
+    avatar.inhabitedByAi = false;
+    avatar.brainId = undefined;
+    avatar.currentGoal = 'Await manual control or a future AI brain assignment.';
+    avatar.recentDecision = 'AI brain disconnected.';
+    avatar.intendedNextStep = 'Select Control from the Avatar Manager or quick switcher.';
+    this.lastMessage = `${avatar.name} is now an empty manual avatar.`;
+    return avatar;
+  }
+
+  deleteAvatar(avatarId: string): AvatarState | undefined {
+    const avatar = this.avatars.get(avatarId);
+    if (!avatar) {
+      return undefined;
+    }
+
+    if (avatar.brainId) {
+      this.brains.delete(avatar.brainId);
+    }
+
+    this.avatars.delete(avatarId);
+
+    if (this.selectedAvatarId === avatarId) {
+      this.selectedAvatarId = [...this.avatars.values()].find((entry) => entry.control === 'manual' && !entry.shutdown)?.id ?? this.avatars.keys().next().value;
+    }
+
+    this.chunkManager.updateForAvatarPositions([...this.avatars.values()].map((entry) => entry.position));
+    this.lastMessage = `Deleted avatar: ${avatar.name}.`;
+    return avatar;
+  }
+
   update(dt: number): void {
     this.elapsed += dt;
     this.tick += 1;
     this.recomputeTeslaInterference();
+    this.expireAvatarInteractionEffects();
 
     for (const avatar of this.avatars.values()) {
       if (avatar.energy <= 0) {
@@ -186,6 +297,31 @@ export class WorldState {
     }
 
     this.chunkManager.updateForAvatarPositions([...this.avatars.values()].map((avatar) => avatar.position));
+  }
+
+  recordHandshake(sourceAvatarId: string, targetAvatarId: string): void {
+    const id = createId('handshake');
+    this.avatarInteractionEffects.set(id, {
+      id,
+      type: 'handshake',
+      sourceAvatarId,
+      targetAvatarId,
+      startedAt: this.elapsed,
+      duration: 1.25,
+    });
+  }
+
+  activeAvatarInteractionEffects(): AvatarInteractionEffect[] {
+    this.expireAvatarInteractionEffects();
+    return [...this.avatarInteractionEffects.values()];
+  }
+
+  private expireAvatarInteractionEffects(): void {
+    for (const [id, effect] of this.avatarInteractionEffects) {
+      if (this.elapsed - effect.startedAt > effect.duration) {
+        this.avatarInteractionEffects.delete(id);
+      }
+    }
   }
 
   changeEnergy(avatar: AvatarState, amount: number): void {
@@ -351,6 +487,10 @@ export class WorldState {
 
     if (distance2D(avatar.position, candidate.position) > WORLD_RULES.buildReach) {
       return { valid: false, reason: 'Too far from avatar.' };
+    }
+
+    if (this.getBoundsForCandidate(candidate).max.y > WORLD_RULES.maxBuildHeight) {
+      return { valid: false, reason: `Build height limit is ${WORLD_RULES.maxBuildHeight} grid units.` };
     }
 
     if (this.intersectsExisting(candidate)) {
@@ -540,6 +680,21 @@ export class WorldState {
       height: Number.isFinite(node.height) ? Number(node.height) : 2,
       interference: Boolean(node.interference),
     };
+  }
+
+  private createBrain(
+    avatarId: string,
+    options: { provider: string; model: string },
+  ): BrainState {
+    const brain: BrainState = {
+      id: createId('brain'),
+      avatarId,
+      provider: options.provider,
+      model: options.model,
+    };
+
+    this.brains.set(brain.id, brain);
+    return brain;
   }
 
   private shutdownAvatar(avatar: AvatarState, reason: string): void {

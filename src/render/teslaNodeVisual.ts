@@ -4,7 +4,7 @@ import { applyRaycastMeta, createSoftGlowTexture } from './geometry';
 
 const ACTIVE_COLOR = 0xf5ffff;
 const FIELD_COLOR = 0x88ffff;
-const DANGER_COLOR = 0xff2020;
+const DANGER_COLOR = 0xff0000;
 
 export type TeslaGlowSettings = {
   active: number;
@@ -169,7 +169,7 @@ export function createTeslaNodeVisual(node: TeslaNodeState, showField: boolean, 
     group.add(nodeLight);
   } else {
     const remaining = Math.ceil(node.targetEnergy - node.contribution);
-    const progress = ignoreRaycast(createTextSprite(`${Math.floor(node.contribution)} / ${node.targetEnergy}  needs ${remaining}`, '#ff4b4b'));
+    const progress = ignoreRaycast(createTextSprite(`${Math.floor(node.contribution)} / ${node.targetEnergy}  needs ${remaining}`, '#ff0000'));
     progress.position.y = height + 0.55;
     group.add(progress);
 

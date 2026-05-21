@@ -1,5 +1,23 @@
 # Tron World AI Agent Manual
 
+## Current Status
+
+The old prompt/parser/manual-brain architecture is no longer trusted.
+
+The current repo has AI avatar creation, AI connection UI, avatar chat, and LLM
+client plumbing. The autonomous simulation behavior loop is not currently active:
+`src/agents/AgentBrainGateway.ts` is a stub.
+
+Before changing agent behavior, read:
+
+- `WORLD_TRUTH_AGENT_RULES.md`
+- `CHECKPOINT.md`
+- `src/agents/README.md`
+- the README files under `src/agents/*/`
+
+The old science-engine docs referenced earlier are not present in this checkout.
+The do-not rules in `WORLD_TRUTH_AGENT_RULES.md` still apply.
+
 ## Start The World
 
 From the project root:
@@ -8,11 +26,14 @@ From the project root:
 npm run dev
 ```
 
-Vite starts the world on `http://127.0.0.1:5173/` by default. If that port is busy, it automatically picks the next available local port and prints it in the terminal.
+Vite starts the world on `http://127.0.0.1:5173/` by default. If that port is
+busy, it automatically picks the next available local port and prints it in the
+terminal.
 
-## Current Agent Flow
+## Historical Agent Flow
 
-Tron World keeps the world engine as the source of truth.
+This section describes the older design shape and is kept only as historical
+context. Do not recreate it blindly.
 
 ```txt
 World State
@@ -26,56 +47,69 @@ World State
 -> Event Log
 ```
 
-The AI never mutates the world directly. It only proposes one JSON action. The engine validates the action before anything changes.
+The AI never mutates the world directly. It only proposes one action request.
+The engine validates the action before anything changes.
+
+That rule is still true, even though the live autonomous loop is currently
+disabled.
 
 ## LM Studio Setup
 
 1. Open LM Studio.
 2. Load a local chat model.
 3. Start the local server.
-4. Use the OpenAI-compatible server endpoint:
+4. Use the in-app AI Connection menu.
+
+The app can talk to LM Studio through the Vite proxy:
 
 ```txt
-http://localhost:1234/v1
+/lmstudio
 ```
 
-The app sends requests to:
+It can also use LM Studio's OpenAI-compatible endpoint through:
 
 ```txt
-http://localhost:1234/v1/chat/completions
+/lmstudio/v1
+```
+
+The local LM Studio server is expected at:
+
+```txt
+http://127.0.0.1:1234
 ```
 
 ## Default AI Config
 
-The default config is:
+The current default config in code is:
 
 ```ts
-provider: "openai-compatible"
-baseUrl: "http://localhost:1234/v1"
-model: "local-model"
+provider: "lmstudio-rest"
+baseUrl: "/lmstudio"
+model: "google/gemma-3-4b"
 apiKey: "not-needed"
 ```
 
 Set your LM Studio model name in browser devtools if needed:
 
 ```js
-localStorage.setItem("tron-world:llm-provider", "openai-compatible");
-localStorage.setItem("tron-world:llm-base-url", "http://localhost:1234/v1");
+localStorage.setItem("tron-world:llm-provider", "lmstudio-rest");
+localStorage.setItem("tron-world:llm-base-url", "/lmstudio");
 localStorage.setItem("tron-world:llm-model", "your-loaded-model-name");
 localStorage.setItem("tron-world:llm-api-key", "not-needed");
 ```
 
 Then refresh the page.
 
-For scripted fallback/testing:
+Scripted fallback is not part of the target architecture. Deterministic fallback
+is allowed only when it is explicit, validated, and logged.
 
-```js
-localStorage.setItem("tron-world:llm-provider", "scripted");
-```
+## Future Model Action Shape
 
-## What The Model Must Return
+The live gateway does not currently ask the model for simulation actions. A
+future behavior loop should use a strict bounded shape, likely based on candidate
+ids instead of invented free-form actions.
 
-The model should return only JSON:
+Older example JSON:
 
 ```json
 {
@@ -91,7 +125,8 @@ The model should return only JSON:
 }
 ```
 
-If the model fails, times out, or returns invalid JSON, Tron World falls back safely. The simulation should not crash.
+If the model fails, times out, or returns invalid JSON, Tron World must fall back
+safely. The simulation should not crash.
 
 ## Supported Actions
 
@@ -122,11 +157,11 @@ wait
 - The AI cannot invent blocks or Tesla Nodes.
 - The AI cannot decide that an action succeeded.
 - The engine validates all actions.
-- Rejected actions are logged and shown to the next agent prompt.
+- Rejected actions should be logged once the autonomous behavior loop exists.
 
 ## First AI Agent
 
 When a human enters the world, the app spawns one AI agent named `Grid Witness`.
 
-If LM Studio is running and configured, `Grid Witness` uses the OpenAI-compatible brain. If the model is unavailable, it falls back to a safe scripted action.
-
+Current behavior: `Grid Witness` exists as an AI avatar, but autonomous movement
+and decision-making are not active until the agent gateway is rebuilt.

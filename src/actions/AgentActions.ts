@@ -19,7 +19,7 @@ export const AGENT_ACTION_TYPES = [
 ] as const;
 
 export type AgentActionType = (typeof AGENT_ACTION_TYPES)[number];
-export type AgentBuildShape = 'cube' | 'half_cube' | 'ramp' | 'tile' | 'pillar';
+export type AgentBuildShape = 'cube' | 'tile';
 
 export type AgentAction =
   | { action: 'move_forward' | 'move_backward' | 'move_left' | 'move_right' | 'jump' | 'wait' }
@@ -48,14 +48,14 @@ export const AGENT_ACTION_SCHEMAS: ActionSchema[] = [
   { action: 'move_toward', description: 'Move toward a visible or remembered position.', parameters: { target: '{x,y,z}' } },
   {
     action: 'place_block',
-    description: 'Place a normal snapped block.',
-    parameters: { shape: 'cube | half_cube | ramp | tile | pillar', position: '{x,y,z}', rotation: '0 | 90 | 180 | 270', color: 'optional hex color' },
+    description: 'Place a snapped Square or Tile block. Use shape "cube" for the square block.',
+    parameters: { shape: 'cube | tile', position: '{x,y,z}', rotation: '0 | 90 | 180 | 270', color: 'optional hex color' },
   },
   { action: 'remove_block', description: 'Remove a nearby block or removable Tesla Node.', parameters: { targetBlockId: 'optional id', position: 'optional {x,y,z}' } },
   { action: 'scan', description: 'Spend Energy to inspect the local area more deeply.', parameters: { focus: 'area | structure | agent | tesla_node', targetId: 'optional id' } },
   { action: 'handshake', description: 'Handshake with a nearby active avatar.', parameters: { targetAgentId: 'avatar id' } },
-  { action: 'recalibrate', description: 'Restore Focus by reviewing goal, recent decision, target, and next step.' },
-  { action: 'recharge', description: 'Wait in an active Tesla field. Recharge is automatic when in range.' },
+  { action: 'recalibrate', description: 'Re-center by reviewing goal, recent decision, target, and next step.' },
+  { action: 'recharge', description: 'Hold position in an active Tesla field only when Energy is below full.' },
   { action: 'transfer_energy', description: 'Transfer Energy to a nearby avatar.', parameters: { targetAgentId: 'avatar id', amount: 'number' } },
   { action: 'build_tesla_node', description: 'Start a Tesla Node foundation on a valid floor position.', parameters: { position: '{x,y,z}', contribution: 'number' } },
   { action: 'wait', description: 'Do nothing for this decision tick.' },

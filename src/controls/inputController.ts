@@ -15,6 +15,7 @@ type InputCallbacks = {
   getOrbitHorizontalInverted: () => boolean;
   getOrbitVerticalInverted: () => boolean;
   getBuildOpen: () => boolean;
+  getAvatarControllable: () => boolean;
   onToggleBuild: () => void;
   onPrimary: () => void;
   onSecondary: () => void;
@@ -97,7 +98,7 @@ export class InputController {
   }
 
   getAvatarMove(avatar: AvatarState | undefined, dt: number): { velocity: Vec3; jump: boolean; moving: boolean } {
-    if (!avatar || avatar.shutdown || this.callbacks.getMode() === 'free_camera') {
+    if (!avatar || avatar.shutdown || this.callbacks.getMode() === 'free_camera' || !this.callbacks.getAvatarControllable()) {
       this.jumpQueued = false;
       this.thirdPersonCamera.steerFollow = false;
       return { velocity: { x: 0, y: 0, z: 0 }, jump: false, moving: false };
@@ -226,7 +227,7 @@ export class InputController {
         this.thirdPersonCamera.orbitYawOffset = 0;
         this.rightMouseDragged = false;
         this.rightMouseDownAt = performance.now();
-        void this.canvas.requestPointerLock();
+        this.canvas.style.cursor = 'none';
       }
     });
 
@@ -293,9 +294,7 @@ export class InputController {
       }
 
       if (this.rightMouseHeld) {
-        if (document.pointerLockElement !== this.canvas) {
-          this.applyRightMouseLook(event.movementX, event.movementY, sensitivity);
-        }
+        this.applyRightMouseLook(event.movementX, event.movementY, sensitivity);
         return;
       }
 
@@ -321,28 +320,9 @@ export class InputController {
       }
     });
 
-    document.addEventListener('mousemove', (event) => {
-      if (!this.rightMouseHeld || document.pointerLockElement !== this.canvas) {
-        return;
-      }
-
-      const movedFarEnough = Math.abs(event.movementX) + Math.abs(event.movementY) > 2;
-      if (movedFarEnough) {
-        this.rightMouseDragged = true;
-      }
-
-      this.applyRightMouseLook(event.movementX, event.movementY, 0.004);
-    });
-
     document.addEventListener('mouseup', (event) => {
       if (event.button === 2 && this.rightMouseHeld) {
         this.endRightMouseHold();
-      }
-    });
-
-    document.addEventListener('pointerlockchange', () => {
-      if (document.pointerLockElement !== this.canvas && this.rightMouseHeld) {
-        this.endRightMouseHold(false);
       }
     });
 
@@ -393,7 +373,7 @@ export class InputController {
     }
 
     const avatar = this.callbacks.getAvatar();
-    if (!avatar || avatar.shutdown) {
+    if (!avatar || avatar.shutdown || !this.callbacks.getAvatarControllable()) {
       return;
     }
 
@@ -409,12 +389,9 @@ export class InputController {
     );
   }
 
-  private endRightMouseHold(exitPointerLock = true): void {
+  private endRightMouseHold(): void {
     this.rightMouseHeld = false;
     this.thirdPersonCamera.steerFollow = false;
-
-    if (exitPointerLock && document.pointerLockElement === this.canvas) {
-      document.exitPointerLock();
-    }
+    this.canvas.style.cursor = '';
   }
 }

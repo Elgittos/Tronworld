@@ -79,8 +79,11 @@ export function createGhostVisual(shape: BlockShape): THREE.Group {
   return group;
 }
 
-export function updateGhostVisual(group: THREE.Group, valid: boolean): void {
-  const color = valid ? 0x29ff9a : 0xff3030;
+export type GhostVisualMode = 'valid' | 'invalid' | 'delete';
+
+export function updateGhostVisual(group: THREE.Group, mode: GhostVisualMode | boolean): void {
+  const visualMode: GhostVisualMode = typeof mode === 'boolean' ? (mode ? 'valid' : 'invalid') : mode;
+  const color = visualMode === 'delete' ? 0xff3030 : visualMode === 'valid' ? 0x29ff9a : 0x7f8890;
 
   group.traverse((child) => {
     const mesh = child as THREE.Mesh;

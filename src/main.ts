@@ -2,14 +2,20 @@ import * as THREE from 'three';
 import './style.css';
 import { ActionResult, ActionSystem } from './actions/actions';
 import { AgentBrainGateway } from './agents/AgentBrainGateway';
+import { buildAvatarChatPrompt, formatVisionDebugForChat } from './agents/chat/buildAvatarChatPrompt';
+import { buildAwarenessSnapshot } from './agents/senses/awareness/buildAwarenessSnapshot';
+import { buildVisionSnapshot } from './agents/senses/vision/buildVisionSnapshot';
 import { InputController } from './controls/inputController';
-import { DEFAULT_LM_STUDIO_CONFIG, LLMProviderConfig } from './llm/LLMProviderConfig';
+import { LMStudioRestClient } from './llm/LMStudioRestClient';
+import { DEFAULT_LM_STUDIO_CONFIG, isLlmProvider, LLMProviderConfig, normalizeLlmBaseUrl, shouldPreferLmStudioRest } from './llm/LLMProviderConfig';
+import { OpenAICompatibleClient } from './llm/OpenAICompatibleClient';
 import { PhysicsSystem } from './physics/physicsSystem';
+import { SoundEffects } from './ui/soundEffects';
 import { UIController } from './ui/uiController';
-import { CameraMode, distance2D, WORLD_RULES } from './world/types';
+import { AvatarState, CameraMode, distance2D, WORLD_RULES } from './world/types';
 import { WorldEventLog } from './world/WorldEvents';
 import { WorldState } from './world/worldState';
-import { WorldRenderer } from './render/worldRenderer';
+import { RaycastTarget, WorldRenderer } from './render/worldRenderer';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 
@@ -18,9 +24,17 @@ if (!app) {
 }
 
 const world = new WorldState();
-const actionSystem = new ActionSystem(world);
+const soundEffects = new SoundEffects();
+const actionSystem = new ActionSystem(world, {
+  onBuildPlaced: (event) => {
+    const listener = world.getSelectedAvatar();
+    const builder = world.avatars.get(event.avatarId);
+    soundEffects.playBuild(listener?.position, builder?.position ?? event.position);
+  },
+});
 const eventLog = new WorldEventLog();
-const agentGateway = new AgentBrainGateway(world, actionSystem, eventLog, loadLlmConfig());
+let currentLlmConfig = loadLlmConfig();
+const agentGateway = new AgentBrainGateway(world, actionSystem, eventLog, currentLlmConfig);
 const renderer = new WorldRenderer(app);
 const physics = await PhysicsSystem.create();
 let cameraMode: CameraMode = 'third_person';
@@ -30,17 +44,30 @@ let handshakeCooldown = 0;
 
 const knownPhysicsBlocks = new Set<string>();
 const knownPhysicsTeslaNodes = new Set<string>();
+const stepPhases = new Map<string, number>();
 
 let ui!: UIController;
 let controls!: InputController;
 ui = new UIController({
   onCreateAvatar: (options) => {
-    const avatar = world.createManualAvatar(options);
+    const avatar =
+      options.creationType === 'ai'
+        ? world.createAiAvatar({
+            name: options.name,
+            color: options.color,
+            eyeStyle: options.eyeStyle,
+            provider: options.provider,
+            model: options.model,
+          })
+        : world.createManualAvatar(options);
     physics.createAvatar(avatar.id, avatar.position);
-    ensureAiAgent();
+    if (options.creationType === 'manual') {
+      ensureAiAgent();
+    }
     ui.startAmbientAudio();
     controls.freeCamera.position.copy(new THREE.Vector3(avatar.position.x + 5, 4.5, avatar.position.z + 7));
     world.lastMessage = `${avatar.name} is online near the starting Tesla Node.`;
+    logSystem(`Avatar created: ${avatar.name}`);
   },
   onCameraModeChange: (mode) => {
     cameraMode = mode;
@@ -48,11 +75,55 @@ ui = new UIController({
   onSpawnAiAvatar: () => {
     const agent = spawnAiAgent();
     world.lastMessage = `${agent.name} spawned from the menu.`;
+    logSystem(`Avatar created: ${agent.name}`);
   },
   onLlmConfigChange: (config) => {
+    currentLlmConfig = config;
     agentGateway.setConfig(config);
     world.lastMessage = `AI connection set to ${config.provider}.`;
   },
+  onMenuClick: () => soundEffects.playMenuClick(),
+  onSelectAvatar: (avatarId, intent) => {
+    const avatar = world.selectAvatar(avatarId);
+    if (!avatar) {
+      return;
+    }
+
+    if (intent === 'control' && !world.isAvatarControllable(avatar.id)) {
+      ui.setStatus('AI-occupied avatar cannot be directly controlled.');
+      logSystem(`Viewing AI-occupied avatar: ${avatar.name}`);
+      return;
+    }
+
+    controls.thirdPersonCamera.orbitYawOffset = 0;
+    controls.thirdPersonCamera.orbitPitchOffset = 0;
+    world.lastMessage = intent === 'control' ? `Controlling ${avatar.name}.` : `Viewing ${avatar.name}.`;
+    logSystem(`${intent === 'control' ? 'Control switched to' : 'Viewing'}: ${avatar.name}`);
+  },
+  onAssignAi: (avatarId) => {
+    const brain = world.assignAiBrain(avatarId, {
+      provider: ui.llmProvider,
+      model: ui.llmModel,
+    });
+    const avatar = world.avatars.get(avatarId);
+    if (brain && avatar) {
+      logSystem(`AI assigned to: ${avatar.name}`);
+    }
+  },
+  onDisconnectAi: (avatarId) => {
+    const avatar = world.disconnectAiBrain(avatarId);
+    if (avatar) {
+      logSystem(`AI disconnected from: ${avatar.name}`);
+    }
+  },
+  onDeleteAvatar: (avatarId) => {
+    const avatar = world.deleteAvatar(avatarId);
+    if (avatar) {
+      physics.removeAvatar(avatar.id);
+      logSystem(`Avatar deleted: ${avatar.name}`);
+    }
+  },
+  onAvatarChat: (avatarId, message) => chatWithAvatarModel(avatarId, message),
 });
 
 controls = new InputController(renderer.renderer.domElement, {
@@ -63,7 +134,16 @@ controls = new InputController(renderer.renderer.domElement, {
   getOrbitHorizontalInverted: () => ui.orbitHorizontalInverted,
   getOrbitVerticalInverted: () => ui.orbitVerticalInverted,
   getBuildOpen: () => ui.buildOpen,
-  onToggleBuild: () => ui.toggleBuildPanel(),
+  getAvatarControllable: () => world.isAvatarControllable(world.selectedAvatarId),
+  onToggleBuild: () => {
+    const avatar = world.getSelectedAvatar();
+    if (!avatar || world.isAvatarControllable(avatar.id)) {
+      ui.toggleBuildPanel();
+      return;
+    }
+
+    ui.setStatus('AI-occupied avatar cannot be directly controlled.');
+  },
   onPrimary: () => handlePrimaryAction(),
   onSecondary: () => handleSecondaryAction(),
 });
@@ -85,7 +165,7 @@ function tick(now: number): void {
   controls.updateFreeCamera(dt);
   agentGateway.update(now);
 
-  if (avatar && cameraMode !== 'free_camera') {
+  if (avatar && cameraMode !== 'free_camera' && world.isAvatarControllable(avatar.id)) {
     const move = controls.getAvatarMove(avatar, dt);
     avatarMoving = move.moving;
     const physicsResult = physics.moveAvatar(avatar.id, move.velocity, move.jump, dt);
@@ -100,6 +180,7 @@ function tick(now: number): void {
   }
 
   updateAiAgents(dt, now);
+  updateAvatarStepSounds(now);
 
   controls.updateHeldCamera(dt, cameraMode === 'third_person' && avatarMoving);
 
@@ -112,10 +193,10 @@ function tick(now: number): void {
 
   world.update(dt);
   syncPhysicsObjects();
-  const glowSettings = ui.getGlowSettings();
+  const glowSettings = ui.getGlowSettings(world);
   renderer.setGlowLevel(glowSettings);
   renderer.update(world, cameraMode, controls.freeCamera, controls.thirdPersonCamera, glowSettings, now / 1000);
-  ui.update(world, placementResult ?? lastActionResult, contextText);
+  ui.update(world, placementResult ?? lastActionResult, contextText, eventLog.recent(80));
 
   requestAnimationFrame(tick);
 }
@@ -133,13 +214,9 @@ function spawnAiAgent(name?: string) {
   const agent = world.createAiAvatar({
     name: name ?? `Grid Witness ${aiCount + 1}`,
     color: '#44f2ff',
-    position: { x: -2.5 - aiCount * 1.35, y: 0, z: 3.5 + aiCount * 0.65 },
-    personality: {
-      focus: 30,
-      connection: 22,
-      curiosity: 30,
-      purpose: 18,
-    },
+    provider: ui?.llmProvider ?? DEFAULT_LM_STUDIO_CONFIG.provider,
+    model: ui?.llmModel ?? DEFAULT_LM_STUDIO_CONFIG.model,
+    position: { x: -2.5 - aiCount * 2.4, y: 0, z: 3.5 + aiCount * 1.4 },
   });
   physics.createAvatar(agent.id, agent.position);
   return agent;
@@ -164,22 +241,65 @@ function updateAiAgents(dt: number, now: number): void {
   }
 }
 
+function updateAvatarStepSounds(now: number): void {
+  const time = now / 1000;
+  const listener = world.getSelectedAvatar()?.position;
+
+  for (const avatar of world.avatars.values()) {
+    const moving = avatar.isMoving && avatar.grounded && !avatar.shutdown;
+
+    if (!moving) {
+      stepPhases.delete(avatar.id);
+      continue;
+    }
+
+    const phase = Math.floor((time * 7 - Math.PI / 2) / Math.PI);
+    const previousPhase = stepPhases.get(avatar.id);
+    stepPhases.set(avatar.id, phase);
+
+    if (previousPhase === undefined || previousPhase === phase) {
+      continue;
+    }
+
+    const strength = avatar.control === 'ai' ? 0.82 : 1;
+    soundEffects.playStep(listener, avatar.position, strength);
+  }
+}
+
 function loadLlmConfig(): LLMProviderConfig {
   const storage = typeof window === 'undefined' ? undefined : window.localStorage;
+  const storedProviderValue = storage?.getItem('tron-world:llm-provider');
+  const storedProvider = isLlmProvider(storedProviderValue) ? storedProviderValue : DEFAULT_LM_STUDIO_CONFIG.provider;
+  const storedBaseUrl = storage?.getItem('tron-world:llm-base-url') ?? DEFAULT_LM_STUDIO_CONFIG.baseUrl;
+  const provider = shouldPreferLmStudioRest(storedProvider, storedBaseUrl) ? 'lmstudio-rest' : storedProvider;
 
   return {
     ...DEFAULT_LM_STUDIO_CONFIG,
-    provider: (storage?.getItem('tron-world:llm-provider') as LLMProviderConfig['provider'] | null) ?? DEFAULT_LM_STUDIO_CONFIG.provider,
-    baseUrl: storage?.getItem('tron-world:llm-base-url') ?? DEFAULT_LM_STUDIO_CONFIG.baseUrl,
+    provider,
+    baseUrl: normalizeLlmBaseUrl(storedBaseUrl, provider),
     model: storage?.getItem('tron-world:llm-model') ?? DEFAULT_LM_STUDIO_CONFIG.model,
     apiKey: storage?.getItem('tron-world:llm-api-key') ?? DEFAULT_LM_STUDIO_CONFIG.apiKey,
   };
+}
+
+function logSystem(message: string): void {
+  eventLog.record({
+    tick: world.tick,
+    type: 'world',
+    message,
+  });
 }
 
 function handlePrimaryAction(): void {
   const avatar = world.getSelectedAvatar();
 
   if (!avatar || !ui.buildOpen) {
+    return;
+  }
+
+  if (!world.isAvatarControllable(avatar.id)) {
+    lastActionResult = { ok: false, message: 'AI-occupied avatar cannot be directly controlled.' };
+    ui.setStatus(lastActionResult.message);
     return;
   }
 
@@ -228,11 +348,33 @@ function handlePrimaryAction(): void {
 function handleSecondaryAction(): void {
   const avatar = world.getSelectedAvatar();
 
-  if (!avatar || !ui.buildOpen) {
+  if (!ui.buildOpen) {
+    const target = renderer.getLookTarget(world, avatar?.id, controls.pointerNdc);
+    if (target?.kind === 'avatar' && target.id) {
+      const targetAvatar = world.avatars.get(target.id);
+      const screenPoint = targetAvatar
+        ? renderer.worldToScreen({
+            x: targetAvatar.position.x,
+            y: targetAvatar.position.y + 1.55,
+            z: targetAvatar.position.z,
+          })
+        : renderer.worldToScreen(target.point);
+      ui.openAvatarPanel(world, target.id, screenPoint.visible ? screenPoint : undefined);
+    }
     return;
   }
 
-  const target = renderer.getLookTarget(world, avatar.id, controls.pointerNdc);
+  if (!avatar) {
+    return;
+  }
+
+  if (!world.isAvatarControllable(avatar.id)) {
+    lastActionResult = { ok: false, message: 'AI-occupied avatar cannot be directly controlled.' };
+    ui.setStatus(lastActionResult.message);
+    return;
+  }
+
+  const target = renderer.getLookTarget(world, avatar.id, controls.pointerNdc, 80);
 
   if (!target || (target.kind !== 'block' && target.kind !== 'tesla_node') || !target.id) {
     lastActionResult = { ok: false, message: 'No removable target.' };
@@ -246,8 +388,58 @@ function handleSecondaryAction(): void {
     targetId: target.id,
     targetKind: target.kind,
   });
+  if (lastActionResult.ok) {
+    logSystem(`Removed ${target.kind}: ${target.id}`);
+  }
   ui.setStatus(lastActionResult.message);
   syncPhysicsObjects();
+}
+
+async function chatWithAvatarModel(avatarId: string, message: string): Promise<string> {
+  const avatar = world.avatars.get(avatarId);
+  if (!avatar) {
+    return 'Avatar no longer exists.';
+  }
+
+  const brain = avatar.brainId ? world.brains.get(avatar.brainId) : undefined;
+  const awareness = buildAwarenessSnapshot(world, avatar.id);
+  const vision = buildVisionSnapshot(world, avatar.id, {
+    range: 18,
+    fieldOfViewDegrees: 360,
+    maxItemsPerCategory: 12,
+  });
+  if (isVisionDebugRequest(message)) {
+    return formatVisionDebugForChat(vision, [...world.blocks.values()]);
+  }
+
+  const provider = brain && isLlmProvider(brain.provider) ? brain.provider : currentLlmConfig.provider;
+  const config: LLMProviderConfig = {
+    ...currentLlmConfig,
+    provider,
+    model: brain?.model || currentLlmConfig.model || DEFAULT_LM_STUDIO_CONFIG.model,
+    baseUrl: normalizeLlmBaseUrl(currentLlmConfig.baseUrl, provider),
+  };
+  const client = provider === 'lmstudio-rest' ? new LMStudioRestClient(config) : new OpenAICompatibleClient(config);
+  const messages = buildAvatarChatPrompt({
+    avatar,
+    brain,
+    awareness,
+    vision,
+    worldBlocks: [...world.blocks.values()],
+    userMessage: message,
+    maxEnergy: WORLD_RULES.maxEnergy,
+  });
+
+  const result = await client.completeChat(messages);
+  if (!result.ok) {
+    throw new Error(result.error);
+  }
+  return result.content;
+}
+
+function isVisionDebugRequest(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  return normalized === 'debug vision' || normalized === 'raw vision' || normalized === 'show raw vision' || normalized === 'vision debug';
 }
 
 function updateBuildingPreview(): ActionResult | undefined {
@@ -255,8 +447,18 @@ function updateBuildingPreview(): ActionResult | undefined {
 
   if (!avatar || !ui.buildOpen) {
     renderer.updateGhost(undefined, false);
+    renderer.updateDeleteGhost(world, undefined);
     return undefined;
   }
+
+  if (!world.isAvatarControllable(avatar.id)) {
+    renderer.updateGhost(undefined, false);
+    renderer.updateDeleteGhost(world, undefined);
+    return { ok: false, message: 'AI-occupied avatar cannot be directly controlled.' };
+  }
+
+  const target = renderer.getLookTarget(world, avatar.id, controls.pointerNdc, 80);
+  renderer.updateDeleteGhost(world, isRemovableBuildTargetInReach(avatar, target) ? target : undefined);
 
   const candidate = renderer.getPlacementCandidate(world, {
     shape: ui.selectedShape,
@@ -284,10 +486,19 @@ function updateBuildingPreview(): ActionResult | undefined {
   return result;
 }
 
+function isRemovableBuildTargetInReach(avatar: AvatarState, target: RaycastTarget | undefined): boolean {
+  if (!target?.id || (target.kind !== 'block' && target.kind !== 'tesla_node')) {
+    return false;
+  }
+
+  const position = target.kind === 'block' ? world.blocks.get(target.id)?.position : world.teslaNodes.get(target.id)?.position;
+  return !!position && distance2D(avatar.position, position) <= WORLD_RULES.buildReach;
+}
+
 function handleHeldInteraction(dt: number): void {
   const avatar = world.getSelectedAvatar();
 
-  if (!avatar || cameraMode === 'free_camera') {
+  if (!avatar || cameraMode === 'free_camera' || !world.isAvatarControllable(avatar.id)) {
     return;
   }
 

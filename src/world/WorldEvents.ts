@@ -1,16 +1,9 @@
-import { AgentAction } from '../actions/AgentActions';
-import { AgentActionResult } from '../actions/ActionResult';
-
 export type WorldEvent = {
   id: string;
   tick: number;
   time: number;
-  type: 'agent_decision' | 'agent_failure' | 'world';
-  agentId?: string;
-  action?: AgentAction;
-  result?: AgentActionResult;
+  type: 'world';
   message: string;
-  shortReason?: string;
 };
 
 export class WorldEventLog {
@@ -34,7 +27,7 @@ export class WorldEventLog {
   }
 
   recent(limit = 8, agentId?: string): WorldEvent[] {
-    const source = agentId ? this.events.filter((event) => event.agentId === agentId) : this.events;
-    return source.slice(Math.max(0, source.length - limit));
+    void agentId;
+    return this.events.slice(Math.max(0, this.events.length - limit));
   }
 }
