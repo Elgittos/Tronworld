@@ -1,5 +1,12 @@
 import { ActionResult } from '../actions/actions';
-import { DEFAULT_LM_STUDIO_CONFIG, isLlmProvider, LLMProviderConfig, normalizeLlmBaseUrl, shouldPreferLmStudioRest } from '../llm/LLMProviderConfig';
+import {
+  DEFAULT_LM_STUDIO_CONFIG,
+  LEGACY_DEFAULT_LM_STUDIO_MODELS,
+  isLlmProvider,
+  LLMProviderConfig,
+  normalizeLlmBaseUrl,
+  shouldPreferLmStudioRest,
+} from '../llm/LLMProviderConfig';
 import type { GlowSettings } from '../render/worldRenderer';
 import type { WorldEvent } from '../world/WorldEvents';
 import { AvatarState, BlockShape, BLOCK_DEFINITIONS, CameraMode, WORLD_RULES } from '../world/types';
@@ -40,6 +47,7 @@ const LLM_STORAGE_KEYS = {
   baseUrl: 'tron-world:llm-base-url',
   model: 'tron-world:llm-model',
   apiKey: 'tron-world:llm-api-key',
+  history: 'tron-world:llm-history:v1',
 } as const;
 const CONTROL_STORAGE_KEYS = {
   orbitHorizontalInverted: 'tron-world:orbit-horizontal-inverted',
@@ -48,6 +56,7 @@ const CONTROL_STORAGE_KEYS = {
 } as const;
 const WORLD_LOG_POSITION_KEY = 'tron-world:world-log-position';
 const LM_STUDIO_REST_BASE_URL = '/lmstudio';
+const LM_STUDIO_BACKEND_BASE_URL = 'http://127.0.0.1:4177/api/llm/lmstudio';
 const LM_STUDIO_OPENAI_BASE_URL = '/lmstudio/v1';
 const AVATAR_SPEED_MIN = 1.8;
 const AVATAR_SPEED_MAX = 7.5;
@@ -58,7 +67,8 @@ type LMStudioModelListResponse = {
     key?: string;
     display_name?: string;
     params_string?: string | null;
-    loaded_instances?: unknown[];
+    selected_variant?: string;
+    loaded_instances?: Array<{ id?: string }>;
     capabilities?: {
       vision?: boolean;
       trained_for_tool_use?: boolean;
@@ -72,6 +82,14 @@ type AvatarChatEntry = {
   role: 'user' | 'model' | 'system';
   text: string;
 };
+type LlmConnectionHistoryEntry = {
+  provider: LLMProviderConfig['provider'];
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  lastUsedAt: string;
+  lastStatus: 'unchecked' | 'connected' | 'disconnected';
+};
 
 export type ScreenPoint = {
   x: number;
@@ -84,6 +102,40 @@ function storageValue(key: string, fallback: string): string {
   } catch {
     return fallback;
   }
+}
+
+function storageLlmModel(): string {
+  const stored = storageValue(LLM_STORAGE_KEYS.model, DEFAULT_LM_STUDIO_CONFIG.model ?? 'local-model');
+  if (LEGACY_DEFAULT_LM_STUDIO_MODELS.includes(stored)) {
+    const next = DEFAULT_LM_STUDIO_CONFIG.model ?? stored;
+    saveStorageValue(LLM_STORAGE_KEYS.model, next);
+    return next;
+  }
+  return stored;
+}
+
+function storageLlmBaseUrl(): string {
+  const stored = storageValue(LLM_STORAGE_KEYS.baseUrl, DEFAULT_LM_STUDIO_CONFIG.baseUrl ?? LM_STUDIO_BACKEND_BASE_URL);
+  if (isLegacyLmStudioProxyUrl(stored)) {
+    const next = DEFAULT_LM_STUDIO_CONFIG.baseUrl ?? LM_STUDIO_BACKEND_BASE_URL;
+    saveStorageValue(LLM_STORAGE_KEYS.baseUrl, next);
+    return next;
+  }
+  return stored;
+}
+
+function isLegacyLmStudioProxyUrl(value: string): boolean {
+  return value.trim().replace(/\/+$/, '') === '/lmstudio';
+}
+
+function normalizeLegacyLlmModel(value: string): string {
+  const trimmed = value.trim();
+  return !trimmed || LEGACY_DEFAULT_LM_STUDIO_MODELS.includes(trimmed) ? (DEFAULT_LM_STUDIO_CONFIG.model ?? 'qwen/qwen3-14b') : trimmed;
+}
+
+function normalizeLegacyLlmBaseUrl(value: string): string {
+  const trimmed = value.trim();
+  return !trimmed || isLegacyLmStudioProxyUrl(trimmed) ? (DEFAULT_LM_STUDIO_CONFIG.baseUrl ?? LM_STUDIO_BACKEND_BASE_URL) : trimmed;
 }
 
 function storageBoolean(key: string, fallback: boolean): boolean {
@@ -104,6 +156,28 @@ function saveStorageValue(key: string, value: string): void {
   } catch {
     // Non-essential UI preference.
   }
+}
+
+function loadLlmConnectionHistory(): LlmConnectionHistoryEntry[] {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LLM_STORAGE_KEYS.history) ?? '[]') as Partial<LlmConnectionHistoryEntry>[];
+    return parsed
+      .filter((entry): entry is LlmConnectionHistoryEntry =>
+        !!entry &&
+        isLlmProvider(entry.provider) &&
+        typeof entry.baseUrl === 'string' &&
+        typeof entry.model === 'string' &&
+        typeof entry.apiKey === 'string' &&
+        typeof entry.lastUsedAt === 'string',
+      )
+      .slice(0, 8);
+  } catch {
+    return [];
+  }
+}
+
+function saveLlmConnectionHistory(entries: LlmConnectionHistoryEntry[]): void {
+  saveStorageValue(LLM_STORAGE_KEYS.history, JSON.stringify(entries.slice(0, 8)));
 }
 
 function escapeAttribute(value: string): string {
@@ -137,8 +211,8 @@ export class UIController {
   teslaNodeSoundEnabled = true;
   teslaNodeVolume = 100;
   llmProvider = this.initialLlmProvider();
-  llmBaseUrl = normalizeLlmBaseUrl(storageValue(LLM_STORAGE_KEYS.baseUrl, DEFAULT_LM_STUDIO_CONFIG.baseUrl ?? ''), this.llmProvider);
-  llmModel = storageValue(LLM_STORAGE_KEYS.model, DEFAULT_LM_STUDIO_CONFIG.model ?? 'local-model');
+  llmBaseUrl = normalizeLlmBaseUrl(storageLlmBaseUrl(), this.llmProvider);
+  llmModel = storageLlmModel();
   llmApiKey = storageValue(LLM_STORAGE_KEYS.apiKey, DEFAULT_LM_STUDIO_CONFIG.apiKey ?? 'not-needed');
   teslaContribution = 0;
   transferCap = 0;
@@ -180,6 +254,7 @@ export class UIController {
   private readonly llmConnectionLine: HTMLElement;
   private readonly llmSimulationLine: HTMLElement;
   private readonly llmModelsList: HTMLElement;
+  private readonly llmHistoryList: HTMLElement;
   private readonly ambientAudio = new AmbientAudio(AMBIENT_TRACKS);
   private readonly teslaNodeAudio = new TeslaNodeLoopSound();
   private readonly contributionInput: HTMLInputElement;
@@ -383,6 +458,7 @@ export class UIController {
                 </div>
                 <button data-apply-llm>Apply AI Connection</button>
                 <p data-llm-status>Configured: ${escapeAttribute(this.llmProvider)} / ${escapeAttribute(this.llmModel)}. Not verified.</p>
+                <div class="llm-history" data-llm-history></div>
               </div>
             </section>
           </div>
@@ -511,7 +587,7 @@ export class UIController {
         <div data-context-line></div>
         <div data-status-line>Create an avatar to begin.</div>
       </section>
-      <details class="world-log" data-world-log>
+      <details class="world-log" data-world-log open>
         <summary>
           <span>World Log</span>
           <span class="world-log-summary-actions">
@@ -581,10 +657,12 @@ export class UIController {
     this.llmConnectionLine = this.get('[data-llm-connection-state]');
     this.llmSimulationLine = this.get('[data-llm-simulation-state]');
     this.llmModelsList = this.get('[data-llm-models]');
+    this.llmHistoryList = this.get('[data-llm-history]');
     this.contributionInput = this.get<HTMLInputElement>('#teslaContribution');
     this.transferInput = this.get<HTMLInputElement>('#transferCap');
 
     this.bindCreatePanel();
+    this.bindAmbientAudioUnlock();
     this.bindMenuClickSound();
     this.bindMenuPanel();
     this.bindHud();
@@ -594,8 +672,10 @@ export class UIController {
     this.bindWorldLogDrag();
     this.bindAvatarPanel();
     this.releaseControlsAfterPointerUse();
+    this.sanitizeLlmConnectionForm();
     this.refreshLlmEndpointHint();
     this.refreshLlmSimulationStatus();
+    this.refreshLlmHistory();
     this.refreshBuildPanel();
     this.setCameraMode(this.cameraMode);
     this.applyButtonTooltips();
@@ -604,7 +684,7 @@ export class UIController {
   private initialLlmProvider(): LLMProviderConfig['provider'] {
     const storedProvider = storageValue(LLM_STORAGE_KEYS.provider, DEFAULT_LM_STUDIO_CONFIG.provider);
     const provider = isLlmProvider(storedProvider) ? storedProvider : DEFAULT_LM_STUDIO_CONFIG.provider;
-    const baseUrl = storageValue(LLM_STORAGE_KEYS.baseUrl, DEFAULT_LM_STUDIO_CONFIG.baseUrl ?? '');
+    const baseUrl = storageLlmBaseUrl();
     return shouldPreferLmStudioRest(provider, baseUrl) ? 'lmstudio-rest' : provider;
   }
 
@@ -630,6 +710,32 @@ export class UIController {
     this.statusLine.textContent = message;
   }
 
+  private sanitizeLlmConnectionForm(): void {
+    const providerInput = this.get<HTMLSelectElement>('#llmProvider');
+    const baseUrlInput = this.get<HTMLInputElement>('#llmBaseUrl');
+    const modelInput = this.get<HTMLInputElement>('#llmModel');
+    const apiKeyInput = this.get<HTMLInputElement>('#llmApiKey');
+    const selectedProvider = isLlmProvider(providerInput.value) ? providerInput.value : DEFAULT_LM_STUDIO_CONFIG.provider;
+    const baseUrl = normalizeLegacyLlmBaseUrl(baseUrlInput.value || this.llmBaseUrl);
+    const provider = this.inferProviderFromBaseUrl(baseUrl, selectedProvider);
+    const normalizedBaseUrl = normalizeLlmBaseUrl(baseUrl, provider);
+    const model = normalizeLegacyLlmModel(modelInput.value || this.llmModel);
+    const apiKey = apiKeyInput.value.trim() || DEFAULT_LM_STUDIO_CONFIG.apiKey || 'not-needed';
+
+    providerInput.value = provider;
+    baseUrlInput.value = normalizedBaseUrl;
+    modelInput.value = model;
+    apiKeyInput.value = apiKey;
+    this.llmProvider = provider;
+    this.llmBaseUrl = normalizedBaseUrl;
+    this.llmModel = model;
+    this.llmApiKey = apiKey;
+    saveStorageValue(LLM_STORAGE_KEYS.provider, provider);
+    saveStorageValue(LLM_STORAGE_KEYS.baseUrl, normalizedBaseUrl);
+    saveStorageValue(LLM_STORAGE_KEYS.model, model);
+    saveStorageValue(LLM_STORAGE_KEYS.apiKey, apiKey);
+  }
+
   private applyButtonTooltips(scope: ParentNode = this.root): void {
     scope.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
       const tooltip = this.buttonTooltip(button);
@@ -643,6 +749,10 @@ export class UIController {
   private buttonTooltip(button: HTMLButtonElement): string {
     if (button.dataset.modelKey !== undefined) {
       return `Use ${this.buttonText(button)} as the AI model.`;
+    }
+
+    if (button.dataset.llmHistoryIndex !== undefined) {
+      return `Load ${this.buttonText(button)} into the AI connection form.`;
     }
 
     if (button.dataset.avatarAction) {
@@ -1084,28 +1194,37 @@ export class UIController {
     this.worldLogList.innerHTML = compacted
       .reverse()
       .map(({ event, count }) => {
-        void world;
-        const speaker = 'System';
+        const avatar = event.avatarId ? world.avatars.get(event.avatarId) : undefined;
+        const speaker = event.avatarName ?? avatar?.name ?? 'System';
+        const style = avatar ? ` style="--entry-color: ${escapeAttribute(avatar.color)}"` : '';
+        const avatarClass = avatar ? ' has-avatar' : '';
         const repeated = count > 1 ? `<strong>x${count}</strong>` : '';
-        return `<div class="world-log-entry ${event.type}"><span class="world-log-speaker">[${escapeHtml(speaker)}]</span> ${this.worldLogMessageHtml(event)}${repeated}</div>`;
+        return `<div class="world-log-entry ${event.type}${avatarClass}"${style}><span class="world-log-speaker">[${escapeHtml(speaker)}]</span> ${this.worldLogMessageHtml(event)}${repeated}</div>`;
       })
       .join('');
   }
 
   private worldLogMessageHtml(event: WorldEvent): string {
-    return `<span class="world-log-message">${escapeHtml(event.message)}</span>`;
+    const showActionMeta = event.type === 'action';
+    const action = showActionMeta && event.action ? `<span class="world-log-action-text">${escapeHtml(event.action)}</span> ` : '';
+    const status = showActionMeta && event.status ? ` <span class="world-log-status-text">${escapeHtml(event.status)}</span>` : '';
+    return `${action}<span class="world-log-message">${escapeHtml(event.message)}</span>${status}`;
   }
 
   private filteredWorldLogEvents(events: WorldEvent[]): WorldEvent[] {
     switch (this.activeWorldLogTab) {
       case 'thoughts':
-        return [];
+        return events.filter((event) => event.type === 'thought' && this.worldLogAgentEnabled(event));
       case 'system':
-        return events.filter((event) => event.type === 'world');
+        return events.filter((event) => event.type === 'system' || event.type === 'world');
       case 'actions':
       default:
-        return [];
+        return events.filter((event) => event.type === 'action' && this.worldLogAgentEnabled(event));
     }
+  }
+
+  private worldLogAgentEnabled(event: WorldEvent): boolean {
+    return !event.avatarId || this.worldLogAgentFilters.get(event.avatarId) !== false;
   }
 
   private updateWorldLogFilters(world: WorldState): void {
@@ -1165,7 +1284,7 @@ export class UIController {
   }
 
   private worldLogCompactKey(event: WorldEvent): string {
-    return `${event.type}:${event.message}`;
+    return `${event.type}:${event.avatarId ?? 'system'}:${event.action ?? ''}:${event.status ?? ''}:${event.message}`;
   }
 
   private updatePovReactorReflection(avatar: AvatarState | undefined): void {
@@ -1197,6 +1316,12 @@ export class UIController {
 
       this.callbacks.onMenuClick();
     });
+  }
+
+  private bindAmbientAudioUnlock(): void {
+    const start = () => this.startAmbientAudio();
+    document.addEventListener('pointerdown', start, { once: true, capture: true });
+    document.addEventListener('keydown', start, { once: true, capture: true });
   }
 
   private bindCreatePanel(): void {
@@ -1248,6 +1373,8 @@ export class UIController {
     const menuSections = [...this.root.querySelectorAll<HTMLElement>('[data-menu-section]')];
 
     this.get<HTMLButtonElement>('[data-menu-open]').addEventListener('click', () => {
+      this.sanitizeLlmConnectionForm();
+      this.refreshLlmEndpointHint();
       this.menuOverlay.classList.remove('hidden');
     });
 
@@ -1264,6 +1391,10 @@ export class UIController {
     menuButtons.forEach((button) => {
       button.addEventListener('click', () => {
         const key = button.dataset.menuTab;
+        if (key === 'llm') {
+          this.sanitizeLlmConnectionForm();
+          this.refreshLlmEndpointHint();
+        }
         menuButtons.forEach((entry) => entry.classList.toggle('active', entry === button));
         menuSections.forEach((section) => {
           section.classList.toggle('active', section.dataset.menuSection === key);
@@ -1282,8 +1413,12 @@ export class UIController {
       this.llmStatusLine.textContent = 'Spawned AI agent using current connection settings.';
     });
 
-    this.get<HTMLButtonElement>('[data-apply-llm]').addEventListener('click', () => this.applyLlmConfig());
+    this.get<HTMLButtonElement>('[data-apply-llm]').addEventListener('click', () => {
+      this.sanitizeLlmConnectionForm();
+      this.applyLlmConfig();
+    });
     this.get<HTMLButtonElement>('[data-check-llm]').addEventListener('click', () => {
+      this.sanitizeLlmConnectionForm();
       void this.checkLlmConnection();
     });
     this.get<HTMLButtonElement>('[data-lmstudio-native]').addEventListener('click', () => {
@@ -1293,10 +1428,19 @@ export class UIController {
       this.setLlmFormPreset('openai-compatible');
     });
     this.get<HTMLButtonElement>('[data-refresh-lmstudio-models]').addEventListener('click', () => {
+      this.sanitizeLlmConnectionForm();
       void this.refreshLmStudioModels();
     });
     this.get<HTMLSelectElement>('#llmProvider').addEventListener('change', () => this.refreshLlmEndpointHint());
     this.get<HTMLInputElement>('#llmBaseUrl').addEventListener('input', () => this.refreshLlmEndpointHint());
+    this.llmHistoryList.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement | null)?.closest('[data-llm-history-index]') as HTMLButtonElement | null;
+      if (!button) {
+        return;
+      }
+
+      this.applyLlmHistoryEntry(Number(button.dataset.llmHistoryIndex));
+    });
 
     this.avatarManagerList.addEventListener('click', (event) => {
       const button = (event.target as HTMLElement | null)?.closest('[data-avatar-action]') as HTMLButtonElement | null;
@@ -1477,6 +1621,7 @@ export class UIController {
   }
 
   private applyLlmConfig(): void {
+    this.sanitizeLlmConnectionForm();
     const selectedProviderValue = this.get<HTMLSelectElement>('#llmProvider').value;
     const selectedProvider = isLlmProvider(selectedProviderValue) ? selectedProviderValue : DEFAULT_LM_STUDIO_CONFIG.provider;
     const baseUrlInput = this.get<HTMLInputElement>('#llmBaseUrl');
@@ -1510,6 +1655,7 @@ export class UIController {
       maxTokens: DEFAULT_LM_STUDIO_CONFIG.maxTokens,
       timeoutMs: DEFAULT_LM_STUDIO_CONFIG.timeoutMs,
     });
+    this.recordLlmHistory('unchecked');
     this.llmStatusLine.textContent = `Configured: ${this.llmProvider} / ${this.llmModel}. Checking server...`;
     this.refreshLlmEndpointHint();
     void this.checkLlmConnection();
@@ -1526,10 +1672,24 @@ export class UIController {
     this.refreshLlmEndpointHint();
   }
 
+  private inferProviderFromBaseUrl(baseUrl: string, selectedProvider: LLMProviderConfig['provider']): LLMProviderConfig['provider'] {
+    const value = baseUrl.trim().toLowerCase().replace(/\/+$/, '');
+    if (value.endsWith('/v1') || value.includes(':11434') || value.includes('openrouter') || value.includes('openai')) {
+      return 'openai-compatible';
+    }
+    if (value === '/lmstudio' || value.includes(':1234')) {
+      return 'lmstudio-rest';
+    }
+    return selectedProvider;
+  }
+
   private refreshLlmEndpointHint(): void {
-    const providerValue = this.get<HTMLSelectElement>('#llmProvider').value;
-    const provider = isLlmProvider(providerValue) ? providerValue : DEFAULT_LM_STUDIO_CONFIG.provider;
-    const baseUrl = normalizeLlmBaseUrl(this.get<HTMLInputElement>('#llmBaseUrl').value, provider);
+    const providerInput = this.get<HTMLSelectElement>('#llmProvider');
+    const baseUrlInput = this.get<HTMLInputElement>('#llmBaseUrl');
+    const selectedProvider = isLlmProvider(providerInput.value) ? providerInput.value : DEFAULT_LM_STUDIO_CONFIG.provider;
+    const provider = this.inferProviderFromBaseUrl(baseUrlInput.value, selectedProvider);
+    providerInput.value = provider;
+    const baseUrl = normalizeLlmBaseUrl(baseUrlInput.value, provider);
     const endpoint =
       provider === 'lmstudio-rest'
         ? `${baseUrl || LM_STUDIO_REST_BASE_URL}/api/v1/chat`
@@ -1573,105 +1733,312 @@ export class UIController {
     this.llmConnectionLine.textContent = message;
   }
 
-  private async checkLlmConnection(options: { quiet?: boolean } = {}): Promise<boolean> {
+  private llmFormConfig(): LLMProviderConfig & { provider: LLMProviderConfig['provider']; baseUrl: string; model: string; apiKey: string } {
+    this.sanitizeLlmConnectionForm();
     const providerValue = this.get<HTMLSelectElement>('#llmProvider').value;
-    const provider = isLlmProvider(providerValue) ? providerValue : DEFAULT_LM_STUDIO_CONFIG.provider;
-    const baseUrl = normalizeLlmBaseUrl(this.get<HTMLInputElement>('#llmBaseUrl').value || DEFAULT_LM_STUDIO_CONFIG.baseUrl, provider);
+    const selectedProvider = isLlmProvider(providerValue) ? providerValue : DEFAULT_LM_STUDIO_CONFIG.provider;
+    const baseUrlInput = this.get<HTMLInputElement>('#llmBaseUrl');
+    const provider = this.inferProviderFromBaseUrl(baseUrlInput.value, selectedProvider);
+    const baseUrl = normalizeLlmBaseUrl(baseUrlInput.value || DEFAULT_LM_STUDIO_CONFIG.baseUrl, provider);
     const model = this.get<HTMLInputElement>('#llmModel').value.trim();
     const apiKey = this.get<HTMLInputElement>('#llmApiKey').value.trim();
-    const listUrl = provider === 'lmstudio-rest' ? `${baseUrl || LM_STUDIO_REST_BASE_URL}/api/v1/models` : `${baseUrl || LM_STUDIO_OPENAI_BASE_URL}/models`;
-    const headers: Record<string, string> = {};
+    return { provider, baseUrl, model, apiKey, temperature: DEFAULT_LM_STUDIO_CONFIG.temperature, maxTokens: DEFAULT_LM_STUDIO_CONFIG.maxTokens, timeoutMs: DEFAULT_LM_STUDIO_CONFIG.timeoutMs };
+  }
 
+  private modelListUrl(provider: LLMProviderConfig['provider'], baseUrl: string): string {
+    return provider === 'lmstudio-rest' ? `${baseUrl || LM_STUDIO_REST_BASE_URL}/api/v1/models` : `${baseUrl || LM_STUDIO_OPENAI_BASE_URL}/models`;
+  }
+
+  private modelListHeaders(provider: LLMProviderConfig['provider'], apiKey: string): Record<string, string> {
+    const headers: Record<string, string> = {};
     if (provider === 'openai-compatible' && apiKey && apiKey !== 'not-needed') {
       headers.Authorization = `Bearer ${apiKey}`;
     }
+    return headers;
+  }
+
+  private async fetchModelListWithDetection(config: ReturnType<UIController['llmFormConfig']>): Promise<{
+    provider: LLMProviderConfig['provider'];
+    baseUrl: string;
+    data: LMStudioModelListResponse & { data?: Array<{ id?: string }> };
+  }> {
+    const candidates: Array<{ provider: LLMProviderConfig['provider']; baseUrl: string }> = [
+      { provider: config.provider, baseUrl: normalizeLlmBaseUrl(config.baseUrl, config.provider) },
+    ];
+    if (config.provider === 'lmstudio-rest') {
+      candidates.push({ provider: 'lmstudio-rest', baseUrl: LM_STUDIO_BACKEND_BASE_URL });
+      candidates.push({ provider: 'lmstudio-rest', baseUrl: LM_STUDIO_REST_BASE_URL });
+    }
+    const alternateProvider: LLMProviderConfig['provider'] = config.provider === 'lmstudio-rest' ? 'openai-compatible' : 'lmstudio-rest';
+    candidates.push({ provider: alternateProvider, baseUrl: normalizeLlmBaseUrl(config.baseUrl, alternateProvider) });
+    if (alternateProvider === 'lmstudio-rest') {
+      candidates.push({ provider: 'lmstudio-rest', baseUrl: LM_STUDIO_BACKEND_BASE_URL });
+    }
+
+    let lastError = 'not reachable';
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      const key = `${candidate.provider}|${candidate.baseUrl}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      try {
+        const response = await fetch(this.modelListUrl(candidate.provider, candidate.baseUrl), {
+          headers: this.modelListHeaders(candidate.provider, config.apiKey),
+        });
+        if (!response.ok) {
+          lastError = `HTTP ${response.status}`;
+          continue;
+        }
+
+        const data = (await response.json()) as LMStudioModelListResponse & { data?: Array<{ id?: string }> };
+        return { ...candidate, data };
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : 'unknown error';
+      }
+    }
+
+    throw new Error(lastError);
+  }
+
+  private async checkLlmConnection(options: { quiet?: boolean } = {}): Promise<boolean> {
+    const config = this.llmFormConfig();
 
     if (!options.quiet) {
       this.setLlmConnectionState('checking', 'LLM server: checking...');
     }
 
     try {
-      const response = await fetch(listUrl, { headers });
-      if (!response.ok) {
-        this.setLlmConnectionState('disconnected', `LLM server: disconnected, HTTP ${response.status}`);
-        this.llmStatusLine.textContent = `Configured: ${provider} / ${model || 'no model'}. Server not reachable.`;
-        return false;
-      }
+      const detected = await this.fetchModelListWithDetection(config);
+      this.applyDetectedProvider(detected.provider, detected.baseUrl);
+      const modelNote = detected.provider === 'lmstudio-rest'
+        ? this.resolveLmStudioModelFromList(detected.data, config.model, detected.provider, detected.baseUrl, config.apiKey)
+        : this.resolveOpenAiCompatibleModelFromList(detected.data, config.model);
 
-      const data = (await response.json()) as LMStudioModelListResponse & { data?: Array<{ id?: string }> };
-      const modelKeys = provider === 'lmstudio-rest'
-        ? (data.models ?? []).map((entry) => entry.key).filter(Boolean)
-        : (data.data ?? []).map((entry) => entry.id).filter(Boolean);
-      const modelKnown = model ? modelKeys.includes(model) : false;
-      const modelNote = modelKnown ? `model found: ${model}` : model ? `server reachable, model not confirmed: ${model}` : 'server reachable';
-
-      this.setLlmConnectionState('connected', `LLM server: connected, ${modelNote}`);
-      this.llmStatusLine.textContent = `Configured: ${provider} / ${model || 'no model'}. Server connected. Simulation link inactive.`;
+      const model = this.get<HTMLInputElement>('#llmModel').value.trim();
+      this.setLlmConnectionState('connected', `LLM server: connected, ${detected.provider}, ${modelNote}`);
+      this.llmStatusLine.textContent = `Configured: ${detected.provider} / ${model || 'no model'}. Server connected. Simulation link inactive.`;
+      this.recordLlmHistory('connected');
       return true;
     } catch (error) {
       this.setLlmConnectionState('disconnected', `LLM server: disconnected, ${error instanceof Error ? error.message : 'unknown error'}`);
-      this.llmStatusLine.textContent = `Configured: ${provider} / ${model || 'no model'}. Server not reachable.`;
+      this.llmStatusLine.textContent = `Configured: ${config.provider} / ${config.model || 'no model'}. Server not reachable.`;
+      this.recordLlmHistory('disconnected');
       return false;
     }
   }
 
-  private async refreshLmStudioModels(): Promise<void> {
-    const baseUrlInput = this.get<HTMLInputElement>('#llmBaseUrl');
-    const modelInput = this.get<HTMLInputElement>('#llmModel');
-    const baseUrl = normalizeLlmBaseUrl(baseUrlInput.value || LM_STUDIO_REST_BASE_URL, 'lmstudio-rest').replace(/\/v1\/?$/, '');
-    baseUrlInput.value = baseUrl;
+  private applyDetectedProvider(provider: LLMProviderConfig['provider'], baseUrl: string): void {
+    this.llmProvider = provider;
+    this.llmBaseUrl = baseUrl;
+    this.get<HTMLSelectElement>('#llmProvider').value = provider;
+    this.get<HTMLInputElement>('#llmBaseUrl').value = baseUrl;
+    saveStorageValue(LLM_STORAGE_KEYS.provider, provider);
+    saveStorageValue(LLM_STORAGE_KEYS.baseUrl, baseUrl);
+  }
 
-    this.llmStatusLine.textContent = 'Checking LM Studio models...';
-    this.setLlmConnectionState('checking', 'LLM server: checking LM Studio models...');
+  private recordLlmHistory(status: LlmConnectionHistoryEntry['lastStatus']): void {
+    const provider = this.get<HTMLSelectElement>('#llmProvider').value;
+    const entry: LlmConnectionHistoryEntry = {
+      provider: isLlmProvider(provider) ? provider : DEFAULT_LM_STUDIO_CONFIG.provider,
+      baseUrl: this.get<HTMLInputElement>('#llmBaseUrl').value.trim(),
+      model: this.get<HTMLInputElement>('#llmModel').value.trim() || DEFAULT_LM_STUDIO_CONFIG.model || 'local-model',
+      apiKey: this.get<HTMLInputElement>('#llmApiKey').value.trim() || DEFAULT_LM_STUDIO_CONFIG.apiKey || 'not-needed',
+      lastUsedAt: new Date().toISOString(),
+      lastStatus: status,
+    };
+    const key = `${entry.provider}|${entry.baseUrl}|${entry.model}`;
+    const previous = loadLlmConnectionHistory().filter((item) => `${item.provider}|${item.baseUrl}|${item.model}` !== key);
+    saveLlmConnectionHistory([entry, ...previous]);
+    this.refreshLlmHistory();
+  }
+
+  private refreshLlmHistory(): void {
+    const entries = loadLlmConnectionHistory();
+    if (entries.length === 0) {
+      this.llmHistoryList.innerHTML = '';
+      return;
+    }
+
+    this.llmHistoryList.innerHTML = [
+      '<div class="llm-history-title">Connection History</div>',
+      ...entries.map((entry, index) => {
+        const date = new Date(entry.lastUsedAt);
+        const age = Number.isFinite(date.getTime()) ? date.toLocaleString() : entry.lastUsedAt;
+        return [
+          `<button data-llm-history-index="${index}">`,
+          `<strong>${escapeHtml(entry.model)}</strong>`,
+          `<span>${escapeHtml(entry.provider)} / ${escapeHtml(entry.baseUrl)} / ${escapeHtml(entry.lastStatus)} / ${escapeHtml(age)}</span>`,
+          '</button>',
+        ].join('');
+      }),
+    ].join('');
+    this.applyButtonTooltips(this.llmHistoryList);
+  }
+
+  private applyLlmHistoryEntry(index: number): void {
+    const entry = loadLlmConnectionHistory()[index];
+    if (!entry) {
+      return;
+    }
+
+    this.llmProvider = entry.provider;
+    this.llmBaseUrl = entry.baseUrl;
+    this.llmModel = entry.model;
+    this.llmApiKey = entry.apiKey;
+    this.get<HTMLSelectElement>('#llmProvider').value = entry.provider;
+    this.get<HTMLInputElement>('#llmBaseUrl').value = entry.baseUrl;
+    this.get<HTMLInputElement>('#llmModel').value = entry.model;
+    this.get<HTMLInputElement>('#llmApiKey').value = entry.apiKey;
+    this.refreshLlmEndpointHint();
+    this.llmStatusLine.textContent = `Loaded history: ${entry.provider} / ${entry.model}.`;
+  }
+
+  private resolveLmStudioModelFromList(
+    data: LMStudioModelListResponse,
+    requestedModel: string,
+    provider: LLMProviderConfig['provider'],
+    baseUrl: string,
+    apiKey: string,
+  ): string {
+    const llms = (data.models ?? []).filter((entry) => entry.type === 'llm' && entry.key);
+    const requested = llms.find((entry) =>
+      entry.key === requestedModel ||
+      entry.selected_variant === requestedModel ||
+      (entry.loaded_instances ?? []).some((instance) => instance.id === requestedModel),
+    );
+    const loaded = llms.find((entry) => (entry.loaded_instances?.length ?? 0) > 0);
+    const requestedLoaded = Boolean(requested && (requested.loaded_instances?.length ?? 0) > 0);
+    const shouldPreferLoaded =
+      !requestedModel ||
+      LEGACY_DEFAULT_LM_STUDIO_MODELS.includes(requestedModel) ||
+      (loaded && !requestedLoaded);
+
+    if (loaded && shouldPreferLoaded) {
+      const loadedModel = loaded.loaded_instances?.[0]?.id ?? loaded.key ?? loaded.selected_variant;
+      if (loadedModel && loadedModel !== requestedModel) {
+        this.applyResolvedLlmModel(provider, baseUrl, loadedModel, apiKey);
+        return `selected loaded model: ${loadedModel}`;
+      }
+    }
+
+    if (requestedLoaded) {
+      return `model loaded: ${requestedModel}`;
+    }
+
+    if (requested) {
+      return `model found but not loaded: ${requestedModel}`;
+    }
+
+    return requestedModel ? `server reachable, model not confirmed: ${requestedModel}` : 'server reachable';
+  }
+
+  private resolveOpenAiCompatibleModelFromList(data: { data?: Array<{ id?: string }> }, requestedModel: string): string {
+    const modelKeys = (data.data ?? []).map((entry) => entry.id).filter(Boolean);
+    const modelKnown = requestedModel ? modelKeys.includes(requestedModel) : false;
+    return modelKnown ? `model found: ${requestedModel}` : requestedModel ? `server reachable, model not confirmed: ${requestedModel}` : 'server reachable';
+  }
+
+  private applyResolvedLlmModel(provider: LLMProviderConfig['provider'], baseUrl: string, model: string, apiKey: string): void {
+    this.llmProvider = provider;
+    this.llmBaseUrl = baseUrl;
+    this.llmModel = model;
+    this.llmApiKey = apiKey || DEFAULT_LM_STUDIO_CONFIG.apiKey || 'not-needed';
+    this.get<HTMLInputElement>('#llmModel').value = model;
+    saveStorageValue(LLM_STORAGE_KEYS.provider, provider);
+    saveStorageValue(LLM_STORAGE_KEYS.baseUrl, baseUrl);
+    saveStorageValue(LLM_STORAGE_KEYS.model, model);
+    saveStorageValue(LLM_STORAGE_KEYS.apiKey, this.llmApiKey);
+    this.callbacks.onLlmConfigChange({
+      provider,
+      baseUrl,
+      model,
+      apiKey: this.llmApiKey,
+      temperature: DEFAULT_LM_STUDIO_CONFIG.temperature,
+      maxTokens: DEFAULT_LM_STUDIO_CONFIG.maxTokens,
+      timeoutMs: DEFAULT_LM_STUDIO_CONFIG.timeoutMs,
+    });
+  }
+
+  private async refreshLmStudioModels(): Promise<void> {
+    const modelInput = this.get<HTMLInputElement>('#llmModel');
+    const config = this.llmFormConfig();
+
+    this.llmStatusLine.textContent = 'Checking model server...';
+    this.setLlmConnectionState('checking', 'LLM server: finding models...');
 
     try {
-      const response = await fetch(`${baseUrl}/api/v1/models`);
-      if (!response.ok) {
-        this.llmStatusLine.textContent = `Model check failed: HTTP ${response.status}.`;
-        this.setLlmConnectionState('disconnected', `LLM server: disconnected, HTTP ${response.status}`);
-        return;
-      }
+      const detected = await this.fetchModelListWithDetection(config);
+      this.applyDetectedProvider(detected.provider, detected.baseUrl);
 
-      const data = (await response.json()) as LMStudioModelListResponse;
-      const llms = (data.models ?? []).filter((model) => model.type === 'llm' && model.key);
-      if (llms.length === 0) {
-        this.llmModelsList.innerHTML = '<span>No local LLMs found.</span>';
-        this.llmStatusLine.textContent = 'LM Studio reachable, but no LLM models were listed.';
-        this.setLlmConnectionState('connected', 'LLM server: connected, no LLM models listed');
-        return;
-      }
+      if (detected.provider === 'lmstudio-rest') {
+        const llms = (detected.data.models ?? []).filter((model) => model.type === 'llm' && model.key);
+        if (llms.length === 0) {
+          this.llmModelsList.innerHTML = '<span>No local LLMs found.</span>';
+          this.llmStatusLine.textContent = 'Model server reachable, but no LLM models were listed.';
+          this.setLlmConnectionState('connected', 'LLM server: connected, no LLM models listed');
+          this.recordLlmHistory('connected');
+          return;
+        }
 
-      const loaded = llms.find((model) => (model.loaded_instances?.length ?? 0) > 0) ?? llms[0];
-      if (loaded.key) {
-        modelInput.value = loaded.key;
-      }
+        const loaded = llms.find((model) => (model.loaded_instances?.length ?? 0) > 0) ?? llms[0];
+        const selectedModel = loaded.loaded_instances?.[0]?.id ?? loaded.key;
+        if (selectedModel) {
+          modelInput.value = selectedModel;
+        }
 
-      this.llmModelsList.innerHTML = llms
-        .map((model) => {
-          const loadedLabel = (model.loaded_instances?.length ?? 0) > 0 ? 'READY' : 'available';
-          const features = [
-            model.params_string,
-            model.capabilities?.vision ? 'vision' : undefined,
-            model.capabilities?.trained_for_tool_use ? 'tools' : undefined,
-          ]
-            .filter(Boolean)
-            .join(' / ');
-          return `<button data-model-key="${escapeAttribute(model.key ?? '')}">${escapeHtml(model.display_name ?? model.key ?? 'Model')} <span>${loadedLabel}${features ? ` · ${escapeHtml(features)}` : ''}</span></button>`;
-        })
-        .join('');
+        this.llmModelsList.innerHTML = llms
+          .map((model) => {
+            const modelKey = model.loaded_instances?.[0]?.id ?? model.key ?? '';
+            const loadedLabel = (model.loaded_instances?.length ?? 0) > 0 ? 'READY' : 'available';
+            const features = [
+              model.params_string,
+              model.capabilities?.vision ? 'vision' : undefined,
+              model.capabilities?.trained_for_tool_use ? 'tools' : undefined,
+            ]
+              .filter(Boolean)
+              .join(' / ');
+            return `<button data-model-key="${escapeAttribute(modelKey)}">${escapeHtml(model.display_name ?? model.key ?? 'Model')} <span>${loadedLabel}${features ? ` / ${escapeHtml(features)}` : ''}</span></button>`;
+          })
+          .join('');
+      } else {
+        const models = (detected.data.data ?? []).map((model) => model.id).filter((model): model is string => Boolean(model));
+        if (models.length === 0) {
+          this.llmModelsList.innerHTML = '<span>No models returned by this endpoint.</span>';
+          this.llmStatusLine.textContent = 'OpenAI-compatible endpoint reachable, but no models were listed.';
+          this.setLlmConnectionState('connected', 'LLM server: connected, no models listed');
+          this.recordLlmHistory('connected');
+          return;
+        }
+
+        if (!models.includes(modelInput.value)) {
+          modelInput.value = models[0];
+        }
+
+        this.llmModelsList.innerHTML = models
+          .map((model) => `<button data-model-key="${escapeAttribute(model)}">${escapeHtml(model)} <span>available</span></button>`)
+          .join('');
+      }
 
       this.llmModelsList.querySelectorAll<HTMLButtonElement>('[data-model-key]').forEach((button) => {
         button.addEventListener('click', () => {
           modelInput.value = button.dataset.modelKey ?? modelInput.value;
+          this.llmModel = modelInput.value;
+          saveStorageValue(LLM_STORAGE_KEYS.model, this.llmModel);
         });
       });
       this.applyButtonTooltips(this.llmModelsList);
 
-      this.llmStatusLine.textContent = `LM Studio reachable. Selected ${loaded.key}. Simulation link inactive.`;
-      this.setLlmConnectionState('connected', `LLM server: connected, selected ${loaded.key}`);
+      this.llmModel = modelInput.value;
+      saveStorageValue(LLM_STORAGE_KEYS.model, this.llmModel);
+      this.llmStatusLine.textContent = `Model server reachable. Selected ${this.llmModel}. Simulation link inactive.`;
+      this.setLlmConnectionState('connected', `LLM server: connected, selected ${this.llmModel}`);
+      this.recordLlmHistory('connected');
     } catch (error) {
       this.llmStatusLine.textContent = `Model check failed: ${error instanceof Error ? error.message : 'Unknown error'}.`;
       this.setLlmConnectionState('disconnected', `LLM server: disconnected, ${error instanceof Error ? error.message : 'unknown error'}`);
+      this.recordLlmHistory('disconnected');
     }
   }
 

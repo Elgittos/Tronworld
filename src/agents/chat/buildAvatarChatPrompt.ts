@@ -1,6 +1,18 @@
 import { LLMMessage } from '../../llm/LLMClient';
 import { AvatarState, BlockInstance, BrainState } from '../../world/types';
+import { RetrievedMemoryContext } from '../../runtime/runtimeApi';
+import { formatMotivationForChat } from '../motivation/buildMotivationAppraisals';
+import { MotivationSnapshot } from '../motivation/types';
+import { formatPlanningForChat } from '../planning/buildPlanningSnapshot';
+import { PlanningSnapshot } from '../planning/types';
+import { ActionFeedbackSnapshot } from '../senses/action_feedback/types';
+import { AttentionSnapshot } from '../senses/attention/types';
 import { AwarenessSnapshot } from '../senses/awareness/types';
+import { EnergySnapshot } from '../senses/energy/types';
+import { SocialSnapshot } from '../senses/social/types';
+import { SpatialAwarenessSnapshot } from '../senses/space/types';
+import { SystemSnapshot } from '../senses/system/types';
+import { TouchSnapshot } from '../senses/touch/types';
 import { VisibleThing, VisionSnapshot } from '../senses/vision/types';
 
 export type AvatarChatPromptInput = {
@@ -8,6 +20,16 @@ export type AvatarChatPromptInput = {
   brain?: BrainState;
   awareness?: AwarenessSnapshot;
   vision?: VisionSnapshot;
+  space?: SpatialAwarenessSnapshot;
+  energy?: EnergySnapshot;
+  social?: SocialSnapshot;
+  touch?: TouchSnapshot;
+  actionFeedback?: ActionFeedbackSnapshot;
+  attention?: AttentionSnapshot;
+  system?: SystemSnapshot;
+  memory?: RetrievedMemoryContext;
+  motivation?: MotivationSnapshot;
+  planning?: PlanningSnapshot;
   worldBlocks?: BlockInstance[];
   userMessage: string;
   maxEnergy: number;
@@ -26,8 +48,13 @@ export function buildAvatarChatPrompt(input: AvatarChatPromptInput): LLMMessage[
         `Current awareness:\n${formatAwarenessForChat(awareness, avatar, maxEnergy)}`,
         `Energy: ${Math.round(avatar.energy)} / ${maxEnergy}.`,
         `Current vision:\n${formatVisionForChat(vision)}`,
+        `Other current senses:\n${formatOtherSensesForChat(input)}`,
+        `Memory continuity:\n${formatMemoryForChat(input.memory)}`,
+        `Motivation context:\n${formatMotivationForChat(input.motivation)}`,
+        `Planning context:\n${formatPlanningForChat(input.planning)}`,
         'The current vision above is freshly rebuilt for this exact user message. Treat it as replacing any earlier visual description.',
         'When answering what you see, mention only objects listed in Current vision. If an object is not listed there, say you do not currently see it.',
+        'Current senses override memory. If memory says something used to be present but current senses do not show it, say you remember it but do not currently perceive it.',
         'If the user asks what is directly in front, use the narrow center-view list, not the wider ahead/side lists.',
         brain ? `Connected brain: ${brain.provider} / ${brain.model}.` : 'No avatar brain is assigned; answer through the currently configured model.',
         'Keep replies short and readable.',
@@ -122,7 +149,10 @@ function formatAwarenessForChat(awareness: AwarenessSnapshot | undefined, avatar
     `- Kind: ${awareness.identity.kind}. Body: ${awareness.identity.body}. Body color: ${awareness.identity.color}.`,
     `- Body state: ${awareness.bodyState.onlineState}, ${awareness.bodyState.movement}, ${awareness.bodyState.lookPitch.description}, ${awareness.bodyState.facingDirection.description}.`,
     `- Position: x:${position.x.toFixed(1)} y:${position.y.toFixed(1)} z:${position.z.toFixed(1)}.`,
-    `- Age: ${awareness.lifetime.ageDescription}.`,
+    `- Awake this session: ${awareness.lifetime.sessionAgeDescription}.`,
+    awareness.lifetime.firstCreatedAt
+      ? `- First recorded creation: ${awareness.lifetime.firstCreatedAt}${awareness.lifetime.persistentAgeDescription ? ` (${awareness.lifetime.persistentAgeDescription} ago)` : ''}.`
+      : '- First recorded creation: unknown.',
     `- Energy: ${Math.round(awareness.vital.energy)} / ${awareness.vital.maxEnergy}, ${awareness.vital.energyState}.`,
     `- Current goal: ${awareness.intention.currentGoal}.`,
     `- Recent state: ${awareness.intention.recentDecision}.`,
@@ -132,6 +162,53 @@ function formatAwarenessForChat(awareness: AwarenessSnapshot | undefined, avatar
 
   if (awareness.intention.recentFailure) {
     lines.push(`- Recent failure: ${awareness.intention.recentFailure}.`);
+  }
+
+  return lines.join('\n');
+}
+
+function formatOtherSensesForChat(input: AvatarChatPromptInput): string {
+  const lines: string[] = [];
+
+  if (input.energy) {
+    lines.push(`- Energy sense: ${input.energy.summary}`);
+  }
+  if (input.space) {
+    lines.push(`- Spatial awareness: ${input.space.summary}`);
+  }
+  if (input.social) {
+    lines.push(`- Social sense: ${input.social.summary}`);
+  }
+  if (input.touch) {
+    lines.push(`- Touch sense: ${input.touch.summary}`);
+  }
+  if (input.actionFeedback) {
+    lines.push(`- Action feedback: ${input.actionFeedback.summary}`);
+  }
+  if (input.attention) {
+    lines.push(`- Attention: ${input.attention.summary}`);
+  }
+  if (input.system) {
+    lines.push(`- System: ${input.system.summary}`);
+  }
+
+  return lines.length ? lines.join('\n') : '- No additional senses available.';
+}
+
+function formatMemoryForChat(memory: RetrievedMemoryContext | undefined): string {
+  if (!memory) {
+    return '- No persistent memory retrieved for this message.';
+  }
+
+  const lines = [
+    memory.continuity ? `- ${memory.continuity}` : undefined,
+    memory.coreMemory ? `- Core memory: ${memory.coreMemory}` : undefined,
+  ].filter((line): line is string => Boolean(line));
+
+  if (memory.retrievedMemories.length > 0) {
+    lines.push(`- Retrieved memories: ${memory.retrievedMemories.map((entry) => `${entry.file}: ${entry.text}`).join(' | ')}`);
+  } else {
+    lines.push('- Retrieved memories: none.');
   }
 
   return lines.join('\n');

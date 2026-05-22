@@ -3,6 +3,7 @@ import { LLMProviderConfig } from '../llm/LLMProviderConfig';
 import { WorldEventLog } from '../world/WorldEvents';
 import { Vec3 } from '../world/types';
 import { WorldState } from '../world/worldState';
+import { AvatarRuntime } from './avatar_runtime/AvatarRuntime';
 
 export type AgentMoveFrame = {
   velocity: Vec3;
@@ -11,23 +12,28 @@ export type AgentMoveFrame = {
 };
 
 export class AgentBrainGateway {
+  private readonly runtime: AvatarRuntime;
+
   constructor(
-    private readonly world: WorldState,
-    _actionSystem: ActionSystem,
-    _eventLog: WorldEventLog,
-    private _config: LLMProviderConfig,
-  ) {}
+    world: WorldState,
+    actionSystem: ActionSystem,
+    eventLog: WorldEventLog,
+    private config: LLMProviderConfig,
+  ) {
+    this.runtime = new AvatarRuntime(world, actionSystem, eventLog, config);
+  }
 
   setConfig(config: LLMProviderConfig): void {
-    this._config = config;
+    this.config = config;
+    this.runtime.setConfig(config);
   }
 
-  update(_now: number): void {
-    void this.world;
-    void this._config;
+  update(now: number): void {
+    void this.config;
+    this.runtime.update(now);
   }
 
-  getMoveFrame(_agentId: string, _now: number, _speed: number): AgentMoveFrame {
-    return { velocity: { x: 0, y: 0, z: 0 }, jump: false, moving: false };
+  getMoveFrame(agentId: string, now: number, speed: number): AgentMoveFrame {
+    return this.runtime.getMoveFrame(agentId, now, speed);
   }
 }

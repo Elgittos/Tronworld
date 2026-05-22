@@ -4,7 +4,12 @@
   "description": "AI-powered Tron World MVP foundation with chunks, avatars, Energy, building, and Tesla Nodes.",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "start": "node scripts/dev.mjs --open",
+    "dev": "node scripts/dev.mjs --open",
+    "dev:no-open": "node scripts/dev.mjs",
+    "dev:frontend": "vite --host 127.0.0.1",
+    "dev:backend": "node server/runtimeBackend.mjs",
+    "smoke:backend": "node scripts/backendSmoke.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },

@@ -18,6 +18,7 @@ Before changing agent behavior, read:
 - `AI_AGENT_MANUAL.md`
 - `src/agents/README.md`
 - the README files under `src/agents/*/`
+- the living plan files under `src/agents/*/*_SYSTEM_PLAN.md`
 
 The older science-engine docs referenced in previous versions are not currently
 present in this checkout. Do not block on missing docs; use the guardrails here
@@ -31,12 +32,17 @@ and the current code state.
 4. The LLM must not directly mutate world state.
 5. The LLM must not invent actions, blocks, Tesla Nodes, success, or world facts.
 6. Protected camera/input behavior must not be changed during agent work.
+7. Agent cognition must be emergent from senses, memory, affordances,
+   motivation, planning, validation, and outcomes; do not hide scripted behavior
+   behind agent language.
 
 ## Do Nots
 
 These are still true:
 
 - Do not add hidden scripted brains and call them AI.
+- Do not hardcode behavior policies such as "if low Energy, always recharge";
+  generate grounded affordances and let motivation/planning appraise them.
 - Do not build prompt-only personality vibes as the behavior engine.
 - Do not add fake motivator HUD bars as if they are real cognition.
 - Do not bypass validators or let prompts replace validation.
@@ -50,6 +56,8 @@ These are still true:
 Future agent work should move toward:
 
 - Candidate actions: generate possible actions before asking an LLM.
+- Emergent affordances: expose grounded opportunities from senses and memory,
+  not scripts that decide the agent's behavior.
 - Validation: filter impossible or illegal candidates before execution.
 - Utility scoring: normalize and score possible actions on a common scale.
 - Empowerment: prefer states with more safe future control and reachable options.
@@ -84,17 +92,19 @@ stable part.
 
 ## Current Implementation Status
 
-As of this document, `src/agents/AgentBrainGateway.ts` is intentionally minimal.
-AI avatars can be created, assigned, and viewed, but the real behavior loop is
-not complete.
+`src/agents/AgentBrainGateway.ts` now adapts the embodied runtime in
+`src/agents/avatar_runtime/`.
+
+The first runtime loop is active infrastructure: it builds senses, retrieves
+cued memory, generates affordances, scores motivation, builds a planning
+snapshot, validates a selected candidate, applies non-movement actions through
+the action system, and exposes movement intents to physics.
+
+This is still bounded deterministic runtime work, not unrestricted LLM control.
+Models must not invent actions or decide outcomes.
 
 ## Next Safe Step
 
-The next safe implementation step is still small:
-
-```txt
-Define CandidateAction records and telemetry without executing autonomous behavior.
-```
-
-Do not jump straight to full reflection, planning, or LLM-controlled movement
-before candidates, validation, scoring, and telemetry are understandable.
+The next safe implementation step is to inspect and tune runtime telemetry,
+candidate scoring, and memory write behavior before adding any LLM candidate-id
+chooser or long-horizon GOAP.

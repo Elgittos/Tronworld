@@ -2,12 +2,32 @@ import * as THREE from 'three';
 import './style.css';
 import { ActionResult, ActionSystem } from './actions/actions';
 import { AgentBrainGateway } from './agents/AgentBrainGateway';
+import { buildAffordanceCandidates, formatAffordanceDebug } from './agents/affordances/buildAffordanceCandidates';
 import { buildAvatarChatPrompt, formatVisionDebugForChat } from './agents/chat/buildAvatarChatPrompt';
+import { buildMemoryCandidates } from './agents/memory/buildMemoryCandidates';
+import { MemoryCandidate } from './agents/memory/types';
+import { buildMotivationSnapshot, formatMotivationDebug } from './agents/motivation/buildMotivationAppraisals';
+import { buildPlanningSnapshot, formatPlanningDebug } from './agents/planning/buildPlanningSnapshot';
+import { buildActionFeedbackSnapshot } from './agents/senses/action_feedback/buildActionFeedbackSnapshot';
+import { buildAttentionSnapshot } from './agents/senses/attention/buildAttentionSnapshot';
 import { buildAwarenessSnapshot } from './agents/senses/awareness/buildAwarenessSnapshot';
+import { buildEnergySnapshot } from './agents/senses/energy/buildEnergySnapshot';
+import { buildMemoryCues } from './agents/senses/memory_cues/buildMemoryCues';
+import { buildSocialSnapshot } from './agents/senses/social/buildSocialSnapshot';
+import { buildSpatialAwarenessSnapshot } from './agents/senses/space/buildSpatialAwarenessSnapshot';
+import { buildSystemSnapshot } from './agents/senses/system/buildSystemSnapshot';
+import { buildTouchSnapshot } from './agents/senses/touch/buildTouchSnapshot';
 import { buildVisionSnapshot } from './agents/senses/vision/buildVisionSnapshot';
 import { InputController } from './controls/inputController';
 import { LMStudioRestClient } from './llm/LMStudioRestClient';
-import { DEFAULT_LM_STUDIO_CONFIG, isLlmProvider, LLMProviderConfig, normalizeLlmBaseUrl, shouldPreferLmStudioRest } from './llm/LLMProviderConfig';
+import {
+  DEFAULT_LM_STUDIO_CONFIG,
+  LEGACY_DEFAULT_LM_STUDIO_MODELS,
+  isLlmProvider,
+  LLMProviderConfig,
+  normalizeLlmBaseUrl,
+  shouldPreferLmStudioRest,
+} from './llm/LLMProviderConfig';
 import { OpenAICompatibleClient } from './llm/OpenAICompatibleClient';
 import { PhysicsSystem } from './physics/physicsSystem';
 import { SoundEffects } from './ui/soundEffects';
@@ -16,6 +36,7 @@ import { AvatarState, CameraMode, distance2D, WORLD_RULES } from './world/types'
 import { WorldEventLog } from './world/WorldEvents';
 import { WorldState } from './world/worldState';
 import { RaycastTarget, WorldRenderer } from './render/worldRenderer';
+import { appendMemoryEntry, ensureMemoryAgent, loadWorldSnapshot, MemoryProfile, retrieveMemoryContext, saveWorldSnapshot } from './runtime/runtimeApi';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 
@@ -23,7 +44,7 @@ if (!app) {
   throw new Error('Missing #app root.');
 }
 
-const world = new WorldState();
+const world = new WorldState(await loadWorldSnapshot());
 const soundEffects = new SoundEffects();
 const actionSystem = new ActionSystem(world, {
   onBuildPlaced: (event) => {
@@ -35,16 +56,26 @@ const actionSystem = new ActionSystem(world, {
 const eventLog = new WorldEventLog();
 let currentLlmConfig = loadLlmConfig();
 const agentGateway = new AgentBrainGateway(world, actionSystem, eventLog, currentLlmConfig);
+updateAiBrainsToCurrentConnection(currentLlmConfig);
 const renderer = new WorldRenderer(app);
 const physics = await PhysicsSystem.create();
 let cameraMode: CameraMode = 'third_person';
 let lastActionResult: ActionResult | undefined;
 let contextText = '';
 let handshakeCooldown = 0;
+let saveInFlight = false;
+let lastSavedSnapshot = '';
+let nextSaveAllowedAt = 0;
 
 const knownPhysicsBlocks = new Set<string>();
 const knownPhysicsTeslaNodes = new Set<string>();
 const stepPhases = new Map<string, number>();
+const memoryWriteCooldowns = new Map<string, number>();
+
+for (const avatar of world.avatars.values()) {
+  physics.createAvatar(avatar.id, avatar.position);
+}
+void ensurePersistentMemoriesForAiAvatars();
 
 let ui!: UIController;
 let controls!: InputController;
@@ -61,6 +92,7 @@ ui = new UIController({
           })
         : world.createManualAvatar(options);
     physics.createAvatar(avatar.id, avatar.position);
+    void ensureAvatarMemory(avatar);
     if (options.creationType === 'manual') {
       ensureAiAgent();
     }
@@ -68,6 +100,7 @@ ui = new UIController({
     controls.freeCamera.position.copy(new THREE.Vector3(avatar.position.x + 5, 4.5, avatar.position.z + 7));
     world.lastMessage = `${avatar.name} is online near the starting Tesla Node.`;
     logSystem(`Avatar created: ${avatar.name}`);
+    persistWorldSoon(true);
   },
   onCameraModeChange: (mode) => {
     cameraMode = mode;
@@ -76,11 +109,14 @@ ui = new UIController({
     const agent = spawnAiAgent();
     world.lastMessage = `${agent.name} spawned from the menu.`;
     logSystem(`Avatar created: ${agent.name}`);
+    persistWorldSoon(true);
   },
   onLlmConfigChange: (config) => {
     currentLlmConfig = config;
+    updateAiBrainsToCurrentConnection(config);
     agentGateway.setConfig(config);
     world.lastMessage = `AI connection set to ${config.provider}.`;
+    persistWorldSoon(true);
   },
   onMenuClick: () => soundEffects.playMenuClick(),
   onSelectAvatar: (avatarId, intent) => {
@@ -107,13 +143,16 @@ ui = new UIController({
     });
     const avatar = world.avatars.get(avatarId);
     if (brain && avatar) {
+      void ensureAvatarMemory(avatar);
       logSystem(`AI assigned to: ${avatar.name}`);
+      persistWorldSoon(true);
     }
   },
   onDisconnectAi: (avatarId) => {
     const avatar = world.disconnectAiBrain(avatarId);
     if (avatar) {
       logSystem(`AI disconnected from: ${avatar.name}`);
+      persistWorldSoon(true);
     }
   },
   onDeleteAvatar: (avatarId) => {
@@ -121,6 +160,7 @@ ui = new UIController({
     if (avatar) {
       physics.removeAvatar(avatar.id);
       logSystem(`Avatar deleted: ${avatar.name}`);
+      persistWorldSoon(true);
     }
   },
   onAvatarChat: (avatarId, message) => chatWithAvatarModel(avatarId, message),
@@ -192,6 +232,7 @@ function tick(now: number): void {
   }
 
   world.update(dt);
+  persistWorldSoon(false, now);
   syncPhysicsObjects();
   const glowSettings = ui.getGlowSettings(world);
   renderer.setGlowLevel(glowSettings);
@@ -219,6 +260,7 @@ function spawnAiAgent(name?: string) {
     position: { x: -2.5 - aiCount * 2.4, y: 0, z: 3.5 + aiCount * 1.4 },
   });
   physics.createAvatar(agent.id, agent.position);
+  void ensureAvatarMemory(agent);
   return agent;
 }
 
@@ -270,24 +312,109 @@ function loadLlmConfig(): LLMProviderConfig {
   const storage = typeof window === 'undefined' ? undefined : window.localStorage;
   const storedProviderValue = storage?.getItem('tron-world:llm-provider');
   const storedProvider = isLlmProvider(storedProviderValue) ? storedProviderValue : DEFAULT_LM_STUDIO_CONFIG.provider;
-  const storedBaseUrl = storage?.getItem('tron-world:llm-base-url') ?? DEFAULT_LM_STUDIO_CONFIG.baseUrl;
+  const rawBaseUrl = storage?.getItem('tron-world:llm-base-url') ?? DEFAULT_LM_STUDIO_CONFIG.baseUrl;
+  const storedBaseUrl = rawBaseUrl === '/lmstudio' ? DEFAULT_LM_STUDIO_CONFIG.baseUrl : rawBaseUrl;
+  const storedModel = storage?.getItem('tron-world:llm-model');
   const provider = shouldPreferLmStudioRest(storedProvider, storedBaseUrl) ? 'lmstudio-rest' : storedProvider;
 
   return {
     ...DEFAULT_LM_STUDIO_CONFIG,
     provider,
     baseUrl: normalizeLlmBaseUrl(storedBaseUrl, provider),
-    model: storage?.getItem('tron-world:llm-model') ?? DEFAULT_LM_STUDIO_CONFIG.model,
+    model: storedModel && !LEGACY_DEFAULT_LM_STUDIO_MODELS.includes(storedModel) ? storedModel : DEFAULT_LM_STUDIO_CONFIG.model,
     apiKey: storage?.getItem('tron-world:llm-api-key') ?? DEFAULT_LM_STUDIO_CONFIG.apiKey,
   };
+}
+
+function updateAiBrainsToCurrentConnection(config: LLMProviderConfig): void {
+  const model = config.model ?? DEFAULT_LM_STUDIO_CONFIG.model ?? 'local-model';
+  for (const avatar of world.avatars.values()) {
+    if ((avatar.control !== 'ai' && !avatar.inhabitedByAi) || !avatar.brainId) {
+      continue;
+    }
+
+    const brain = world.brains.get(avatar.brainId);
+    if (!brain) {
+      continue;
+    }
+
+    brain.provider = config.provider;
+    brain.model = model;
+  }
 }
 
 function logSystem(message: string): void {
   eventLog.record({
     tick: world.tick,
-    type: 'world',
+    type: 'system',
     message,
   });
+}
+
+async function ensurePersistentMemoriesForAiAvatars(): Promise<void> {
+  for (const avatar of world.avatars.values()) {
+    if (avatar.control === 'ai' || avatar.inhabitedByAi) {
+      await ensureAvatarMemory(avatar);
+    }
+  }
+  persistWorldSoon(true);
+}
+
+async function ensureAvatarMemory(avatar: AvatarState): Promise<void> {
+  if (avatar.control !== 'ai' && !avatar.inhabitedByAi) {
+    return;
+  }
+
+  const memory = await ensureMemoryAgent({
+    avatarId: avatar.id,
+    memoryId: avatar.memoryId,
+    name: avatar.name,
+    memoryProfile: chooseMemoryProfile(avatar.brainId ? world.brains.get(avatar.brainId)?.model : currentLlmConfig.model),
+    firstCreatedInWorld: 'Tron World',
+  });
+
+  if (!memory) {
+    return;
+  }
+
+  world.applyMemoryId(avatar.id, memory.memoryId, memory.identity.firstCreatedAt);
+  persistWorldSoon(true);
+}
+
+function chooseMemoryProfile(modelName?: string): MemoryProfile {
+  const normalized = (modelName ?? '').toLowerCase();
+  if (normalized.includes('gpt-5') || normalized.includes('claude') || normalized.includes('frontier')) {
+    return 'frontier';
+  }
+  return 'balanced';
+}
+
+function persistWorldSoon(force = false, now = performance.now()): void {
+  if (!force && now < nextSaveAllowedAt) {
+    return;
+  }
+  if (saveInFlight) {
+    return;
+  }
+
+  const snapshot = world.toSnapshot();
+  const snapshotText = JSON.stringify(snapshot);
+  if (!force && snapshotText === lastSavedSnapshot) {
+    nextSaveAllowedAt = now + 2000;
+    return;
+  }
+
+  saveInFlight = true;
+  nextSaveAllowedAt = now + 2000;
+  void saveWorldSnapshot(snapshot)
+    .then((saved) => {
+      if (saved) {
+        lastSavedSnapshot = snapshotText;
+      }
+    })
+    .finally(() => {
+      saveInFlight = false;
+    });
 }
 
 function handlePrimaryAction(): void {
@@ -343,6 +470,7 @@ function handlePrimaryAction(): void {
 
   ui.setStatus(lastActionResult.message);
   syncPhysicsObjects();
+  persistWorldSoon(true);
 }
 
 function handleSecondaryAction(): void {
@@ -393,6 +521,7 @@ function handleSecondaryAction(): void {
   }
   ui.setStatus(lastActionResult.message);
   syncPhysicsObjects();
+  persistWorldSoon(true);
 }
 
 async function chatWithAvatarModel(avatarId: string, message: string): Promise<string> {
@@ -402,12 +531,116 @@ async function chatWithAvatarModel(avatarId: string, message: string): Promise<s
   }
 
   const brain = avatar.brainId ? world.brains.get(avatar.brainId) : undefined;
+  await ensureAvatarMemory(avatar);
   const awareness = buildAwarenessSnapshot(world, avatar.id);
   const vision = buildVisionSnapshot(world, avatar.id, {
     range: 18,
     fieldOfViewDegrees: 360,
     maxItemsPerCategory: 12,
   });
+  const space = buildSpatialAwarenessSnapshot(world, avatar.id);
+  const energy = buildEnergySnapshot(world, avatar.id);
+  const social = buildSocialSnapshot(world, avatar.id);
+  const touch = buildTouchSnapshot(world, avatar.id);
+  const actionFeedback = buildActionFeedbackSnapshot(world, avatar.id, {
+    result: lastActionResult,
+    recentEvents: eventLog.recent(8),
+  });
+  const system = buildSystemSnapshot(world, avatar.id, {
+    llmConfig: currentLlmConfig,
+    llmConnected: true,
+    lastEngineMessage: world.lastMessage,
+  });
+  const attention = buildAttentionSnapshot(avatar.id, {
+    energy,
+    vision,
+    space,
+    social,
+    touch,
+    actionFeedback,
+    system,
+  });
+  const memoryProfile = chooseMemoryProfile(brain?.model || currentLlmConfig.model);
+  const memoryCues = buildMemoryCues({
+    awareness,
+    vision,
+    space,
+    energy,
+    social,
+    touch,
+    actionFeedback,
+    attention,
+    system,
+    userMessage: message,
+  });
+  const memory = await retrieveMemoryContext({
+    memoryId: avatar.memoryId,
+    memoryProfile,
+    cues: memoryCues,
+  });
+  const affordances = buildAffordanceCandidates({
+    awareness,
+    vision,
+    space,
+    energy,
+    social,
+    touch,
+    actionFeedback,
+    attention,
+    system,
+    memory,
+  });
+  const motivation = buildMotivationSnapshot({
+    awareness,
+    vision,
+    space,
+    energy,
+    social,
+    touch,
+    actionFeedback,
+    attention,
+    system,
+    memory,
+    affordances,
+  });
+  const planning = buildPlanningSnapshot({
+    awareness,
+    vision,
+    space,
+    energy,
+    social,
+    touch,
+    actionFeedback,
+    attention,
+    system,
+    memory,
+    affordances,
+    motivation: motivation.appraisals,
+  });
+
+  if (isMotivationDebugRequest(message)) {
+    return formatMotivationDebug(motivation);
+  }
+
+  if (isPlanningDebugRequest(message)) {
+    return formatPlanningDebug(planning);
+  }
+
+  if (isAffordanceDebugRequest(message)) {
+    return formatAffordanceDebug(affordances);
+  }
+
+  void recordSensedMemories(avatar, memoryProfile, {
+    awareness,
+    vision,
+    space,
+    energy,
+    social,
+    touch,
+    actionFeedback,
+    attention,
+  });
+
   if (isVisionDebugRequest(message)) {
     return formatVisionDebugForChat(vision, [...world.blocks.values()]);
   }
@@ -425,6 +658,16 @@ async function chatWithAvatarModel(avatarId: string, message: string): Promise<s
     brain,
     awareness,
     vision,
+    space,
+    energy,
+    social,
+    touch,
+    actionFeedback,
+    attention,
+    system,
+    memory,
+    motivation,
+    planning,
     worldBlocks: [...world.blocks.values()],
     userMessage: message,
     maxEnergy: WORLD_RULES.maxEnergy,
@@ -437,9 +680,82 @@ async function chatWithAvatarModel(avatarId: string, message: string): Promise<s
   return result.content;
 }
 
+async function recordSensedMemories(
+  avatar: AvatarState,
+  memoryProfile: MemoryProfile,
+  input: Parameters<typeof buildMemoryCandidates>[0],
+): Promise<void> {
+  if (!avatar.memoryId) {
+    return;
+  }
+
+  const candidates = buildMemoryCandidates(input)
+    .filter((candidate) => shouldWriteMemoryCandidate(avatar.memoryId as string, candidate))
+    .slice(0, 3);
+
+  for (const candidate of candidates) {
+    const ok = await appendMemoryEntry({
+      memoryId: avatar.memoryId,
+      memoryProfile,
+      file: candidate.file,
+      text: candidate.summary,
+      source: candidate.source,
+      confidence: candidate.confidence,
+      importance: candidate.importance,
+      category: candidate.category,
+      mergeKey: candidate.mergeKey,
+      novelty: candidate.novelty,
+      repeatCount: candidate.repeatCount,
+      familiarity: candidate.familiarity,
+      impact: candidate.impact,
+      operation: candidate.operation,
+      tags: candidate.tags,
+    });
+
+    if (ok) {
+      markMemoryCandidateWritten(avatar.memoryId, candidate);
+    }
+  }
+}
+
+function shouldWriteMemoryCandidate(memoryId: string, candidate: MemoryCandidate, now = performance.now()): boolean {
+  const key = `${memoryId}:${candidate.mergeKey}`;
+  const previous = memoryWriteCooldowns.get(key) ?? 0;
+  return now - previous >= memoryWriteCooldownMs(candidate);
+}
+
+function markMemoryCandidateWritten(memoryId: string, candidate: MemoryCandidate, now = performance.now()): void {
+  memoryWriteCooldowns.set(`${memoryId}:${candidate.mergeKey}`, now);
+}
+
+function memoryWriteCooldownMs(candidate: MemoryCandidate): number {
+  if (candidate.impact === 'high') {
+    return 10_000;
+  }
+  if (candidate.impact === 'medium') {
+    return 45_000;
+  }
+  return 90_000;
+}
+
 function isVisionDebugRequest(message: string): boolean {
   const normalized = message.trim().toLowerCase();
   return normalized === 'debug vision' || normalized === 'raw vision' || normalized === 'show raw vision' || normalized === 'vision debug';
+}
+
+function isAffordanceDebugRequest(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  return normalized === 'debug affordances' || normalized === 'raw affordances' || normalized === 'show affordances' || normalized === 'affordance debug';
+}
+
+function isMotivationDebugRequest(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  return normalized === 'debug motivation' || normalized === 'raw motivation' || normalized === 'show motivation' || normalized === 'motivation debug';
+}
+
+function isPlanningDebugRequest(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  return normalized === 'debug planning' || normalized === 'raw planning' || normalized === 'show planning' || normalized === 'plan debug' || normalized === 'show plan';
 }
 
 function updateBuildingPreview(): ActionResult | undefined {
@@ -525,6 +841,7 @@ function handleHeldInteraction(dt: number): void {
           nodeId: node.id,
           contribution: Math.min(rate, remaining, avatar.energy),
         });
+        persistWorldSoon(true);
       }
       return;
     }
@@ -551,6 +868,7 @@ function handleHeldInteraction(dt: number): void {
             targetAvatarId: other.id,
             amount: transfer,
           });
+          persistWorldSoon(true);
         }
       }
       return;
@@ -564,6 +882,7 @@ function handleHeldInteraction(dt: number): void {
         avatarId: avatar.id,
         targetAvatarId: other.id,
       });
+      persistWorldSoon(true);
     }
   }
 }

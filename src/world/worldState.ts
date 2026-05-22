@@ -1,5 +1,6 @@
 import { ChunkManager } from '../chunks/chunkManager';
 import {
+  AgentControl,
   AvatarState,
   AvatarInteractionEffect,
   BrainState,
@@ -45,6 +46,19 @@ type PersistedWorldEdits = {
   teslaNodes: TeslaNodeState[];
 };
 
+export type WorldSnapshot = {
+  version: 1;
+  savedAt: string;
+  elapsed: number;
+  tick: number;
+  selectedAvatarId?: string;
+  avatars: AvatarState[];
+  brains: BrainState[];
+  blocks: BlockInstance[];
+  teslaNodes: TeslaNodeState[];
+  lastMessage: string;
+};
+
 function cloneVec3(v: Vec3): Vec3 {
   return { x: v.x, y: v.y, z: v.z };
 }
@@ -75,14 +89,19 @@ export class WorldState {
   tick = 0;
   lastMessage = 'Create an avatar to enter Tron World.';
 
-  constructor() {
+  constructor(snapshot?: WorldSnapshot) {
     this.createStartingTeslaNode();
-    this.loadPersistedWorldEdits();
+    if (snapshot) {
+      this.restoreSnapshot(snapshot);
+    } else {
+      this.loadPersistedWorldEdits();
+    }
   }
 
   createManualAvatar(options: AvatarCreationOptions): AvatarState {
     const avatar: AvatarState = {
       id: createId('avatar'),
+      memoryId: undefined,
       name: options.name.trim() || 'Manual Avatar',
       control: 'manual',
       inhabitedByAi: false,
@@ -95,6 +114,7 @@ export class WorldState {
       shutdown: false,
       isMoving: false,
       grounded: true,
+      firstCreatedAt: new Date().toISOString(),
       createdAtWorldTime: this.elapsed,
       createdAtTick: this.tick,
       currentGoal: 'Explore the starting grid and learn the world controls.',
@@ -115,6 +135,7 @@ export class WorldState {
     const spawnPosition = this.findOpenAvatarSpawn(options.position ? cloneVec3(options.position) : { x: -2.5, y: 0, z: 3.5 });
     const avatar: AvatarState = {
       id: createId('agent'),
+      memoryId: undefined,
       name: options.name?.trim() || 'Tron Agent',
       control: 'ai',
       inhabitedByAi: true,
@@ -127,6 +148,7 @@ export class WorldState {
       shutdown: false,
       isMoving: false,
       grounded: true,
+      firstCreatedAt: new Date().toISOString(),
       createdAtWorldTime: this.elapsed,
       createdAtTick: this.tick,
       currentGoal: 'Stay powered, observe the nearby grid, and cooperate with other avatars.',
@@ -152,6 +174,40 @@ export class WorldState {
     }
 
     return this.avatars.get(this.selectedAvatarId);
+  }
+
+  toSnapshot(): WorldSnapshot {
+    return {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      elapsed: this.elapsed,
+      tick: this.tick,
+      selectedAvatarId: this.selectedAvatarId,
+      avatars: [...this.avatars.values()].map((avatar) => ({
+        ...avatar,
+        position: cloneVec3(avatar.position),
+        attentionTarget: avatar.attentionTarget
+          ? {
+              ...avatar.attentionTarget,
+              position: avatar.attentionTarget.position ? cloneVec3(avatar.attentionTarget.position) : undefined,
+            }
+          : undefined,
+      })),
+      brains: [...this.brains.values()].map((brain) => ({ ...brain })),
+      blocks: [...this.blocks.values()].map((block) => ({ ...block, position: cloneVec3(block.position) })),
+      teslaNodes: [...this.teslaNodes.values()].map((node) => ({ ...node, position: cloneVec3(node.position) })),
+      lastMessage: this.lastMessage,
+    };
+  }
+
+  applyMemoryId(avatarId: string, memoryId: string, firstCreatedAt?: string): void {
+    const avatar = this.avatars.get(avatarId);
+    if (!avatar) {
+      return;
+    }
+
+    avatar.memoryId = memoryId;
+    avatar.firstCreatedAt = firstCreatedAt ?? avatar.firstCreatedAt;
   }
 
   selectAvatar(avatarId: string): AvatarState | undefined {
@@ -572,6 +628,61 @@ export class WorldState {
     this.teslaNodes.set(node.id, node);
   }
 
+  private restoreSnapshot(snapshot: WorldSnapshot): void {
+    if (!snapshot || snapshot.version !== 1) {
+      return;
+    }
+
+    this.avatars.clear();
+    this.brains.clear();
+    this.blocks.clear();
+    this.teslaNodes.clear();
+    this.createStartingTeslaNode();
+
+    this.elapsed = Number.isFinite(snapshot.elapsed) ? Math.max(0, snapshot.elapsed) : 0;
+    this.tick = Number.isFinite(snapshot.tick) ? Math.max(0, Math.floor(snapshot.tick)) : 0;
+    this.lastMessage = typeof snapshot.lastMessage === 'string' ? snapshot.lastMessage : this.lastMessage;
+
+    for (const block of snapshot.blocks ?? []) {
+      const restored = this.restoreBlock(block);
+      if (restored) {
+        this.blocks.set(restored.id, restored);
+        this.chunkManager.markModifiedAt(restored.position);
+      }
+    }
+
+    for (const node of snapshot.teslaNodes ?? []) {
+      const restored = node.starting ? this.restoreStartingTeslaNode(node) : this.restoreTeslaNode(node);
+      if (restored) {
+        this.teslaNodes.set(restored.id, restored);
+        this.chunkManager.markModifiedAt(restored.position);
+      }
+    }
+
+    if (!this.teslaNodes.has('tesla_starting_node')) {
+      this.createStartingTeslaNode();
+    }
+
+    for (const brain of snapshot.brains ?? []) {
+      const restored = this.restoreBrain(brain);
+      if (restored) {
+        this.brains.set(restored.id, restored);
+      }
+    }
+
+    for (const avatar of snapshot.avatars ?? []) {
+      const restored = this.restoreAvatar(avatar);
+      if (restored) {
+        this.avatars.set(restored.id, restored);
+      }
+    }
+
+    this.selectedAvatarId = snapshot.selectedAvatarId && this.avatars.has(snapshot.selectedAvatarId)
+      ? snapshot.selectedAvatarId
+      : [...this.avatars.keys()][0];
+    this.chunkManager.updateForAvatarPositions([...this.avatars.values()].map((entry) => entry.position));
+  }
+
   private loadPersistedWorldEdits(): void {
     const storage = browserStorage();
     if (!storage) {
@@ -679,6 +790,85 @@ export class WorldState {
       radius: Number.isFinite(node.radius) ? Number(node.radius) : WORLD_RULES.teslaRadius,
       height: Number.isFinite(node.height) ? Number(node.height) : 2,
       interference: Boolean(node.interference),
+    };
+  }
+
+  private restoreStartingTeslaNode(value: unknown): TeslaNodeState | undefined {
+    const restored = this.restoreTeslaNode({ ...(value as object), starting: false });
+    if (!restored) {
+      return undefined;
+    }
+
+    return {
+      ...restored,
+      id: restored.id || 'tesla_starting_node',
+      ownerId: 'world',
+      starting: true,
+      active: true,
+      contribution: WORLD_RULES.teslaNodeTargetEnergy,
+      targetEnergy: WORLD_RULES.teslaNodeTargetEnergy,
+      radius: WORLD_RULES.teslaRadius,
+      height: Number.isFinite((value as Partial<TeslaNodeState>).height)
+        ? Number((value as Partial<TeslaNodeState>).height)
+        : 3,
+    };
+  }
+
+  private restoreBrain(value: unknown): BrainState | undefined {
+    const brain = value as Partial<BrainState>;
+    if (!brain || typeof brain.id !== 'string' || typeof brain.avatarId !== 'string') {
+      return undefined;
+    }
+
+    return {
+      id: brain.id,
+      avatarId: brain.avatarId,
+      provider: typeof brain.provider === 'string' ? brain.provider : 'openai-compatible',
+      model: typeof brain.model === 'string' ? brain.model : 'local-model',
+    };
+  }
+
+  private restoreAvatar(value: unknown): AvatarState | undefined {
+    const avatar = value as Partial<AvatarState>;
+    if (!avatar || typeof avatar.id !== 'string' || typeof avatar.name !== 'string' || !isVec3(avatar.position)) {
+      return undefined;
+    }
+
+    const control: AgentControl = avatar.control === 'ai' ? 'ai' : 'manual';
+    const attentionTarget = avatar.attentionTarget
+      ? {
+          type: avatar.attentionTarget.type,
+          id: avatar.attentionTarget.id,
+          position: avatar.attentionTarget.position && isVec3(avatar.attentionTarget.position)
+            ? cloneVec3(avatar.attentionTarget.position)
+            : undefined,
+        }
+      : undefined;
+
+    return {
+      id: avatar.id,
+      memoryId: typeof avatar.memoryId === 'string' ? avatar.memoryId : undefined,
+      name: avatar.name,
+      control,
+      inhabitedByAi: Boolean(avatar.inhabitedByAi),
+      brainId: typeof avatar.brainId === 'string' ? avatar.brainId : undefined,
+      color: typeof avatar.color === 'string' ? avatar.color : '#44f2ff',
+      eyeStyle: 'normal',
+      position: cloneVec3(avatar.position),
+      yaw: Number.isFinite(avatar.yaw) ? Number(avatar.yaw) : Math.PI,
+      pitch: Number.isFinite(avatar.pitch) ? Number(avatar.pitch) : 0,
+      energy: Number.isFinite(avatar.energy) ? clamp(Number(avatar.energy), 0, WORLD_RULES.maxEnergy) : WORLD_RULES.maxEnergy,
+      shutdown: Boolean(avatar.shutdown),
+      isMoving: false,
+      grounded: avatar.grounded !== false,
+      firstCreatedAt: typeof avatar.firstCreatedAt === 'string' ? avatar.firstCreatedAt : new Date().toISOString(),
+      createdAtWorldTime: Number.isFinite(avatar.createdAtWorldTime) ? Number(avatar.createdAtWorldTime) : this.elapsed,
+      createdAtTick: Number.isFinite(avatar.createdAtTick) ? Number(avatar.createdAtTick) : this.tick,
+      currentGoal: typeof avatar.currentGoal === 'string' ? avatar.currentGoal : 'Observe the grid and stay powered.',
+      recentDecision: typeof avatar.recentDecision === 'string' ? avatar.recentDecision : 'Restored from persistent world memory.',
+      intendedNextStep: typeof avatar.intendedNextStep === 'string' ? avatar.intendedNextStep : 'Observe the current world state.',
+      recentFailure: typeof avatar.recentFailure === 'string' ? avatar.recentFailure : undefined,
+      attentionTarget,
     };
   }
 

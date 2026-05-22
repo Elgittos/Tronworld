@@ -1,4 +1,4 @@
-import { AvatarState } from '../../../world/types';
+import { AvatarState, WORLD_RULES } from '../../../world/types';
 import { EnergyDrainAssessment, EnergySafetyState, EnergyTimeEstimate } from './types';
 
 export function assessEnergySafety(
@@ -17,6 +17,13 @@ export function assessEnergySafety(
     return {
       safetyState: 'interference_danger',
       safetyDescription: 'A Tesla interference field is actively draining Energy.',
+    };
+  }
+
+  if (avatar.energy >= WORLD_RULES.maxEnergy - 1) {
+    return {
+      safetyState: 'stable',
+      safetyDescription: 'Energy is full; the body is safe for now.',
     };
   }
 

@@ -4,9 +4,17 @@
 
 The old prompt/parser/manual-brain architecture is no longer trusted.
 
-The current repo has AI avatar creation, AI connection UI, avatar chat, and LLM
-client plumbing. The autonomous simulation behavior loop is not currently active:
-`src/agents/AgentBrainGateway.ts` is a stub.
+The current repo has AI avatar creation, AI connection UI, avatar chat, LLM
+client plumbing, and an initial embodied avatar runtime.
+
+`src/agents/AgentBrainGateway.ts` adapts `src/agents/avatar_runtime/` into the
+world loop. The runtime is deterministic and bounded: it builds senses, retrieves
+cued memory, generates affordances, scores motivation, builds planning context,
+validates a selected candidate, applies non-movement actions through the action
+system, and exposes movement intents for physics.
+
+This is not unrestricted LLM control. Models still cannot invent actions,
+mutate world state, or decide action outcomes.
 
 Before changing agent behavior, read:
 
@@ -14,6 +22,7 @@ Before changing agent behavior, read:
 - `CHECKPOINT.md`
 - `src/agents/README.md`
 - the README files under `src/agents/*/`
+- the living plan files under `src/agents/*/*_SYSTEM_PLAN.md`
 
 The old science-engine docs referenced earlier are not present in this checkout.
 The do-not rules in `WORLD_TRUTH_AGENT_RULES.md` still apply.
@@ -47,11 +56,10 @@ World State
 -> Event Log
 ```
 
-The AI never mutates the world directly. It only proposes one action request.
-The engine validates the action before anything changes.
+The AI never mutates the world directly. Runtime-selected actions still pass
+through validators before anything changes.
 
-That rule is still true, even though the live autonomous loop is currently
-disabled.
+That rule is still true.
 
 ## LM Studio Setup
 
@@ -85,7 +93,7 @@ The current default config in code is:
 ```ts
 provider: "lmstudio-rest"
 baseUrl: "/lmstudio"
-model: "google/gemma-3-4b"
+model: "qwen/qwen3-14b"
 apiKey: "not-needed"
 ```
 
@@ -103,11 +111,17 @@ Then refresh the page.
 Scripted fallback is not part of the target architecture. Deterministic fallback
 is allowed only when it is explicit, validated, and logged.
 
+Agent behavior must be emergent from grounded senses, curated memory,
+affordances, motivation, planning, validation, and outcomes. Do not implement
+hidden hardcoded policies such as "if low Energy, always recharge" and call that
+AI.
+
 ## Future Model Action Shape
 
-The live gateway does not currently ask the model for simulation actions. A
-future behavior loop should use a strict bounded shape, likely based on candidate
-ids instead of invented free-form actions.
+The live gateway does not currently ask the model for simulation actions. The
+current runtime selects from deterministic planning candidates. A future model
+layer should use a strict bounded shape based on candidate ids instead of
+invented free-form actions.
 
 Older example JSON:
 
@@ -163,5 +177,5 @@ wait
 
 When a human enters the world, the app spawns one AI agent named `Grid Witness`.
 
-Current behavior: `Grid Witness` exists as an AI avatar, but autonomous movement
-and decision-making are not active until the agent gateway is rebuilt.
+Current behavior: `Grid Witness` exists as an AI avatar and can be driven by the
+bounded avatar runtime when spawned/assigned as an AI agent.

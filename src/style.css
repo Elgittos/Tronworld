@@ -64,8 +64,8 @@ canvas {
   display: grid;
   place-items: center;
   padding: 28px;
-  background: rgba(2, 6, 16, 0.58);
-  backdrop-filter: blur(8px);
+  background: rgba(2, 6, 16, 0.3);
+  backdrop-filter: blur(5px);
   pointer-events: auto;
 }
 
@@ -79,7 +79,8 @@ canvas {
   display: grid;
   grid-template-columns: 178px minmax(0, 1fr);
   border: 1px solid rgba(136, 255, 255, 0.32);
-  background: rgba(2, 6, 16, 0.9);
+  background: rgba(2, 6, 16, 0.64);
+  backdrop-filter: blur(10px);
   box-shadow:
     0 0 36px rgba(0, 255, 136, 0.11),
     0 0 80px rgba(136, 255, 255, 0.08);
@@ -92,7 +93,7 @@ canvas {
   gap: 8px;
   padding: 12px;
   border-right: 1px solid rgba(136, 255, 255, 0.18);
-  background: rgba(6, 18, 32, 0.72);
+  background: rgba(6, 18, 32, 0.46);
 }
 
 .menu-nav button,
@@ -103,7 +104,7 @@ canvas {
 .avatar-actions button {
   min-height: 34px;
   border: 1px solid rgba(136, 255, 255, 0.24);
-  background: rgba(6, 18, 32, 0.84);
+  background: rgba(6, 18, 32, 0.58);
   color: #dff;
   cursor: pointer;
 }
@@ -161,7 +162,7 @@ canvas {
   gap: 12px;
   max-width: 520px;
   border: 1px solid rgba(136, 255, 255, 0.18);
-  background: rgba(2, 6, 16, 0.54);
+  background: rgba(2, 6, 16, 0.34);
   padding: 12px;
 }
 
@@ -199,7 +200,7 @@ canvas {
 .ai-create-fields select {
   min-height: 36px;
   border: 1px solid rgba(136, 255, 255, 0.26);
-  background: rgba(2, 6, 16, 0.72);
+  background: rgba(2, 6, 16, 0.5);
   color: #dff;
   padding: 8px 10px;
 }
@@ -226,6 +227,40 @@ canvas {
   font-size: 11px;
 }
 
+.llm-history {
+  display: grid;
+  gap: 6px;
+}
+
+.llm-history:empty {
+  display: none;
+}
+
+.llm-history-title {
+  color: rgba(68, 242, 255, 0.74);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.llm-history button {
+  display: grid;
+  gap: 2px;
+  min-height: 40px;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.llm-history button strong {
+  color: rgba(245, 255, 247, 0.92);
+  font-size: 12px;
+}
+
+.llm-history button span {
+  color: rgba(221, 255, 255, 0.62);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 [data-llm-endpoint] {
   border: 1px solid rgba(0, 255, 136, 0.2);
   background: rgba(0, 255, 136, 0.06);
@@ -242,7 +277,7 @@ canvas {
 .llm-simulation-state {
   margin: 0;
   border: 1px solid rgba(136, 255, 255, 0.2);
-  background: rgba(6, 18, 32, 0.66);
+  background: rgba(6, 18, 32, 0.46);
   padding: 8px 10px;
   overflow-wrap: anywhere;
 }

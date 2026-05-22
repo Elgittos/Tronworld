@@ -39,6 +39,7 @@ export type Chunk = {
 
 export type AvatarState = {
   id: string;
+  memoryId?: string;
   name: string;
   control: AgentControl;
   inhabitedByAi: boolean;
@@ -52,6 +53,7 @@ export type AvatarState = {
   shutdown: boolean;
   isMoving: boolean;
   grounded: boolean;
+  firstCreatedAt?: string;
   createdAtWorldTime: number;
   createdAtTick: number;
   currentGoal: string;

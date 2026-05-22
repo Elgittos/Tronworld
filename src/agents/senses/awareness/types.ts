@@ -32,8 +32,11 @@ export type AwarenessSnapshot = {
   lifetime: {
     createdAtTick: number;
     createdAtWorldTime: number;
+    firstCreatedAt?: string;
     ageSeconds: number;
     ageDescription: string;
+    sessionAgeDescription: string;
+    persistentAgeDescription?: string;
   };
   agencyLimits: {
     chatCanSpeak: true;

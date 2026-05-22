@@ -42,3 +42,7 @@ __pycache__/
 smoke-*.png
 playwright-report/
 test-results/
+
+# Tron World local runtime data
+runtime_data/
+src/agents/memory/memory_data/

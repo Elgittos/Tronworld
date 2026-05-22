@@ -75,7 +75,7 @@ export class AmbientAudio {
   }
 
   private applyVolume(): void {
-    const duckMultiplier = 1 - this.duckStrength * 0.96;
+    const duckMultiplier = 1 - this.duckStrength * 0.55;
     this.audio.volume = Math.min(1, Math.max(0, this.volume * duckMultiplier));
   }
 }

@@ -9,6 +9,7 @@ export function buildAwarenessSnapshot(world: WorldState, avatarId: string): Awa
   }
 
   const ageSeconds = Math.max(0, world.elapsed - avatar.createdAtWorldTime);
+  const persistentAgeSeconds = avatar.firstCreatedAt ? Math.max(0, (Date.now() - Date.parse(avatar.firstCreatedAt)) / 1000) : undefined;
   const energyState = describeEnergy(avatar.energy);
   const facingDirection = describeFacingDirection(avatar.yaw);
   const lookPitch = describeLookPitch(avatar.pitch);
@@ -39,8 +40,11 @@ export function buildAwarenessSnapshot(world: WorldState, avatarId: string): Awa
     lifetime: {
       createdAtTick: avatar.createdAtTick,
       createdAtWorldTime: avatar.createdAtWorldTime,
+      firstCreatedAt: avatar.firstCreatedAt,
       ageSeconds,
       ageDescription: formatAge(ageSeconds),
+      sessionAgeDescription: formatAge(ageSeconds),
+      persistentAgeDescription: persistentAgeSeconds === undefined ? undefined : formatAge(persistentAgeSeconds),
     },
     agencyLimits: {
       chatCanSpeak: true,
@@ -59,20 +63,22 @@ export function buildAwarenessSnapshot(world: WorldState, avatarId: string): Awa
       intendedNextStep: avatar.intendedNextStep,
       recentFailure: avatar.recentFailure,
     },
-    summary: buildSummary(avatar, ageSeconds, energyState, facingDirection, lookPitch),
+    summary: buildSummary(avatar, ageSeconds, persistentAgeSeconds, energyState, facingDirection, lookPitch),
   };
 }
 
 function buildSummary(
   avatar: AvatarState,
   ageSeconds: number,
+  persistentAgeSeconds: number | undefined,
   energyState: EnergyState,
   facingDirection: CompassDirection,
   lookPitch: LookPitchDescription,
 ): string {
   const online = avatar.shutdown ? 'shutdown' : 'online';
   const movement = avatar.isMoving ? 'moving' : 'standing still';
-  return `I am ${avatar.name}, a digital being embodied in a ${colorName(avatar.color)} grid body. I am ${online}, ${movement}, ${lookPitch}, facing ${facingDirection}, and I have been awake for ${formatAge(ageSeconds)}. My Energy is ${energyState}.`;
+  const persistent = persistentAgeSeconds === undefined ? '' : ` My persistent memory record is ${formatAge(persistentAgeSeconds)} old.`;
+  return `I am ${avatar.name}, a digital being embodied in a ${colorName(avatar.color)} grid body. I am ${online}, ${movement}, ${lookPitch}, facing ${facingDirection}, and this body session has been awake for ${formatAge(ageSeconds)}.${persistent} My Energy is ${energyState}.`;
 }
 
 function describeEnergy(energy: number): EnergyState {

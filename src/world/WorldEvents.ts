@@ -2,7 +2,11 @@ export type WorldEvent = {
   id: string;
   tick: number;
   time: number;
-  type: 'world';
+  type: 'action' | 'thought' | 'system' | 'world';
+  avatarId?: string;
+  avatarName?: string;
+  action?: string;
+  status?: 'accepted' | 'applied' | 'rejected' | 'failed' | 'info';
   message: string;
 };
 

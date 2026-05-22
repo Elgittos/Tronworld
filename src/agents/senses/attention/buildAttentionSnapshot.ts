@@ -43,7 +43,7 @@ function energyItems(input: AttentionInput): AttentionItem[] {
     }];
   }
 
-  if (energy.insideRechargeField) {
+  if (energy.insideRechargeField && energy.energyState !== 'full') {
     return [{
       source: 'energy',
       priority: 'normal',
